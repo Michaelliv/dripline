@@ -1,6 +1,6 @@
 # dripline 💧
 
-Query APIs using SQL. One drip at a time.
+Query anything, one drip at a time.
 
 ## Install
 
