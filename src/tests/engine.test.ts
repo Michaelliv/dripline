@@ -1,9 +1,9 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { QueryEngine } from "../engine.js";
+import { afterEach, describe, it } from "node:test";
+import { QueryCache } from "../core/cache.js";
+import { QueryEngine } from "../core/engine.js";
+import { RateLimiter } from "../core/rate-limiter.js";
 import { PluginRegistry } from "../plugin/registry.js";
-import { QueryCache } from "../cache.js";
-import { RateLimiter } from "../rate-limiter.js";
 import type { PluginDef, QueryContext } from "../plugin/types.js";
 
 let engine: QueryEngine;
@@ -50,7 +50,10 @@ async function setup(opts?: { cacheEnabled?: boolean; plugins?: PluginDef[] }) {
       },
       {
         name: "items",
-        columns: [{ name: "id", type: "number" }, { name: "value", type: "string" }],
+        columns: [
+          { name: "id", type: "number" },
+          { name: "value", type: "string" },
+        ],
         *list() {
           listCalls++;
           yield { id: 1, value: "a" };
@@ -73,7 +76,9 @@ async function setup(opts?: { cacheEnabled?: boolean; plugins?: PluginDef[] }) {
 }
 
 async function teardown() {
-  try { await engine?.close(); } catch {}
+  try {
+    await engine?.close();
+  } catch {}
 }
 
 describe("QueryEngine", () => {
@@ -118,18 +123,34 @@ describe("QueryEngine", () => {
 
   it("get path used when all key columns have quals and get returns non-null", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{
-          name: "things",
-          columns: [{ name: "id", type: "number" }, { name: "v", type: "string" }],
-          keyColumns: [{ name: "k", required: "required" }],
-          *list() { listCalls++; yield { id: 1, v: "from-list", k: "x" }; },
-          get(ctx) { getCalls++; return { id: 99, v: "from-get", k: ctx.quals[0]?.value }; },
-        }],
-      }],
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "things",
+              columns: [
+                { name: "id", type: "number" },
+                { name: "v", type: "string" },
+              ],
+              keyColumns: [{ name: "k", required: "required" }],
+              *list() {
+                listCalls++;
+                yield { id: 1, v: "from-list", k: "x" };
+              },
+              get(ctx) {
+                getCalls++;
+                return { id: 99, v: "from-get", k: ctx.quals[0]?.value };
+              },
+            },
+          ],
+        },
+      ],
     });
-    const rows = await engine.query("SELECT * FROM things WHERE k = 'x'") as any[];
+    const rows = (await engine.query(
+      "SELECT * FROM things WHERE k = 'x'",
+    )) as any[];
     assert.equal(getCalls, 1);
     assert.equal(listCalls, 0);
     assert.equal(rows[0].v, "from-get");
@@ -137,16 +158,27 @@ describe("QueryEngine", () => {
 
   it("get returns null falls back to list", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{
-          name: "things",
-          columns: [{ name: "id", type: "number" }],
-          keyColumns: [{ name: "k", required: "required" }],
-          *list() { listCalls++; yield { id: 1, k: "x" }; },
-          get() { getCalls++; return null; },
-        }],
-      }],
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "things",
+              columns: [{ name: "id", type: "number" }],
+              keyColumns: [{ name: "k", required: "required" }],
+              *list() {
+                listCalls++;
+                yield { id: 1, k: "x" };
+              },
+              get() {
+                getCalls++;
+                return null;
+              },
+            },
+          ],
+        },
+      ],
     });
     const rows = await engine.query("SELECT * FROM things WHERE k = 'x'");
     assert.equal(getCalls, 1);
@@ -156,19 +188,30 @@ describe("QueryEngine", () => {
 
   it("get not used when not all key columns provided", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{
-          name: "things",
-          columns: [{ name: "id", type: "number" }],
-          keyColumns: [
-            { name: "a", required: "required" },
-            { name: "b", required: "required" },
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "things",
+              columns: [{ name: "id", type: "number" }],
+              keyColumns: [
+                { name: "a", required: "required" },
+                { name: "b", required: "required" },
+              ],
+              *list() {
+                listCalls++;
+                yield { id: 1, a: "x", b: "y" };
+              },
+              get() {
+                getCalls++;
+                return { id: 99, a: "x", b: "y" };
+              },
+            },
           ],
-          *list() { listCalls++; yield { id: 1, a: "x", b: "y" }; },
-          get() { getCalls++; return { id: 99, a: "x", b: "y" }; },
-        }],
-      }],
+        },
+      ],
     });
     await engine.query("SELECT * FROM things WHERE a = 'x'");
     assert.equal(getCalls, 0);
@@ -177,22 +220,29 @@ describe("QueryEngine", () => {
 
   it("hydrate functions enrich rows", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{
-          name: "things",
-          columns: [
-            { name: "id", type: "number" },
-            { name: "extra", type: "string" },
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "things",
+              columns: [
+                { name: "id", type: "number" },
+                { name: "extra", type: "string" },
+              ],
+              *list() {
+                yield { id: 1 };
+              },
+              hydrate: {
+                extra: (_ctx, row) => ({ extra: `hydrated-${row.id}` }),
+              },
+            },
           ],
-          *list() { yield { id: 1 }; },
-          hydrate: {
-            extra: (_ctx, row) => ({ extra: `hydrated-${row.id}` }),
-          },
-        }],
-      }],
+        },
+      ],
     });
-    const rows = await engine.query("SELECT * FROM things") as any[];
+    const rows = (await engine.query("SELECT * FROM things")) as any[];
     assert.equal(rows[0].extra, "hydrated-1");
   });
 
@@ -203,12 +253,18 @@ describe("QueryEngine", () => {
     lastCtx = null;
 
     reg.register({
-      name: "p", version: "0.1.0",
-      tables: [{
-        name: "things",
-        columns: [{ name: "id", type: "number" }],
-        *list(ctx) { lastCtx = ctx; yield { id: 1 }; },
-      }],
+      name: "p",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "things",
+          columns: [{ name: "id", type: "number" }],
+          *list(ctx) {
+            lastCtx = ctx;
+            yield { id: 1 };
+          },
+        },
+      ],
     });
 
     engine = new QueryEngine(reg, cache, rl);
@@ -233,7 +289,9 @@ describe("QueryEngine", () => {
 
   it("query with params", async () => {
     await setup();
-    const rows = await engine.query("SELECT * FROM users WHERE name = $1", ["Bob"]);
+    const rows = await engine.query("SELECT * FROM users WHERE name = $1", [
+      "Bob",
+    ]);
     assert.equal(rows.length, 1);
   });
 
@@ -254,34 +312,74 @@ describe("QueryEngine", () => {
   it("tables from different plugins", async () => {
     await setup({
       plugins: [
-        { name: "a", version: "0.1.0", tables: [{ name: "ta", columns: [{ name: "id", type: "number" }], *list() { yield { id: 1 }; } }] },
-        { name: "b", version: "0.1.0", tables: [{ name: "tb", columns: [{ name: "id", type: "number" }], *list() { yield { id: 2 }; } }] },
+        {
+          name: "a",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "ta",
+              columns: [{ name: "id", type: "number" }],
+              *list() {
+                yield { id: 1 };
+              },
+            },
+          ],
+        },
+        {
+          name: "b",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "tb",
+              columns: [{ name: "id", type: "number" }],
+              *list() {
+                yield { id: 2 };
+              },
+            },
+          ],
+        },
       ],
     });
-    assert.equal((await engine.query("SELECT * FROM ta") as any[])[0].id, 1);
-    assert.equal((await engine.query("SELECT * FROM tb") as any[])[0].id, 2);
+    assert.equal(((await engine.query("SELECT * FROM ta")) as any[])[0].id, 1);
+    assert.equal(((await engine.query("SELECT * FROM tb")) as any[])[0].id, 2);
   });
 
   it("empty list returns no rows", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{ name: "empty", columns: [{ name: "id", type: "number" }], *list() {} }],
-      }],
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "empty",
+              columns: [{ name: "id", type: "number" }],
+              *list() {},
+            },
+          ],
+        },
+      ],
     });
     assert.equal((await engine.query("SELECT * FROM empty")).length, 0);
   });
 
   it("plugin error propagates", async () => {
     await setup({
-      plugins: [{
-        name: "p", version: "0.1.0",
-        tables: [{
-          name: "broken",
-          columns: [{ name: "id", type: "number" }],
-          *list() { throw new Error("boom"); },
-        }],
-      }],
+      plugins: [
+        {
+          name: "p",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "broken",
+              columns: [{ name: "id", type: "number" }],
+              *list() {
+                throw new Error("boom");
+              },
+            },
+          ],
+        },
+      ],
     });
     await assert.rejects(() => engine.query("SELECT * FROM broken"), /boom/);
   });

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ConnectionConfig } from "../plugin/types.js";
 import { DEFAULT_CONFIG, type DriplineConfig } from "./types.js";

@@ -1,9 +1,9 @@
 import type {
   ColumnDef,
-  KeyColumn,
-  ListFunc,
   GetFunc,
   HydrateFunc,
+  KeyColumn,
+  ListFunc,
   PluginDef,
   TableDef,
 } from "./types.js";
@@ -83,7 +83,9 @@ export function createPluginAPI(pluginId: string): {
   };
 
   function resolve(): PluginDef {
-    const plugin: PluginDef & { _initHooks?: Array<(config: Record<string, any>) => void> } = {
+    const plugin: PluginDef & {
+      _initHooks?: Array<(config: Record<string, any>) => void>;
+    } = {
       name,
       version,
       tables,

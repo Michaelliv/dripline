@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { RateLimiter } from "../rate-limiter.js";
+import { describe, it } from "node:test";
+import { RateLimiter } from "../core/rate-limiter.js";
 
 describe("RateLimiter", () => {
   it("acquire with no configured scope passes through", async () => {

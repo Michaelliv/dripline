@@ -1,12 +1,16 @@
-import { QueryEngine } from "./engine.js";
-import { PluginRegistry } from "./plugin/registry.js";
-import { QueryCache } from "./cache.js";
-import { RateLimiter } from "./rate-limiter.js";
-import type { PluginDef, ConnectionConfig, RateLimitConfig } from "./plugin/types.js";
-import type { PluginFunction } from "./plugin/api.js";
-import { resolvePluginExport } from "./plugin/api.js";
 import type { DriplineConfig } from "./config/types.js";
 import { DEFAULT_CONFIG } from "./config/types.js";
+import { QueryCache } from "./core/cache.js";
+import { QueryEngine } from "./core/engine.js";
+import { RateLimiter } from "./core/rate-limiter.js";
+import type { PluginFunction } from "./plugin/api.js";
+import { resolvePluginExport } from "./plugin/api.js";
+import { PluginRegistry } from "./plugin/registry.js";
+import type {
+  ConnectionConfig,
+  PluginDef,
+  RateLimitConfig,
+} from "./plugin/types.js";
 
 export interface DriplineOptions {
   /** Plugins to register (function-based or static objects) */
@@ -64,12 +68,18 @@ export class Dripline {
   }
 
   /** Execute a SQL query and return rows. */
-  async query<T = Record<string, any>>(sql: string, params?: any[]): Promise<T[]> {
+  async query<T = Record<string, any>>(
+    sql: string,
+    params?: any[],
+  ): Promise<T[]> {
     return this.engine.query(sql, params) as Promise<T[]>;
   }
 
   /** Register an additional plugin. Re-initializes the engine. */
-  async addPlugin(pluginOrFn: PluginDef | PluginFunction, connections?: ConnectionConfig[]): Promise<void> {
+  async addPlugin(
+    pluginOrFn: PluginDef | PluginFunction,
+    connections?: ConnectionConfig[],
+  ): Promise<void> {
     const plugin = resolvePluginExport(pluginOrFn, "unknown");
     this.registry.register(plugin);
     if (this.engine) await this.engine.close();

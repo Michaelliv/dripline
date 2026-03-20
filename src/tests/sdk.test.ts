@@ -1,7 +1,7 @@
-import { describe, it, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { Dripline } from "../sdk.js";
+import { afterEach, describe, it } from "node:test";
 import type { PluginDef } from "../plugin/types.js";
+import { Dripline } from "../sdk.js";
 
 const mockPlugin: PluginDef = {
   name: "mock",
@@ -35,7 +35,12 @@ let dl: Dripline;
 
 describe("Dripline SDK", () => {
   afterEach(async () => {
-    if (dl) { try { await dl.close(); } catch {} dl = null as any; }
+    if (dl) {
+      try {
+        await dl.close();
+      } catch {}
+      dl = null as any;
+    }
   });
   it("construct with plugin and query", async () => {
     dl = await Dripline.create({ plugins: [mockPlugin] });
@@ -45,20 +50,30 @@ describe("Dripline SDK", () => {
 
   it("query with WHERE on key column", async () => {
     dl = await Dripline.create({ plugins: [mockPlugin] });
-    const rows = await dl.query("SELECT * FROM mock_items WHERE category = 'x'");
+    const rows = await dl.query(
+      "SELECT * FROM mock_items WHERE category = 'x'",
+    );
     assert.equal(rows.length, 2);
   });
 
   it("query with aggregation", async () => {
     dl = await Dripline.create({ plugins: [mockPlugin] });
-    const rows = await dl.query<{ total: number }>("SELECT SUM(value) as total FROM mock_items");
+    const rows = await dl.query<{ total: number }>(
+      "SELECT SUM(value) as total FROM mock_items",
+    );
     assert.equal(rows[0].total, 60);
   });
 
   it("query with typed result", async () => {
     dl = await Dripline.create({ plugins: [mockPlugin] });
-    interface Item { id: number; name: string; value: number }
-    const rows = await dl.query<Item>("SELECT * FROM mock_items WHERE category = 'y'");
+    interface Item {
+      id: number;
+      name: string;
+      value: number;
+    }
+    const rows = await dl.query<Item>(
+      "SELECT * FROM mock_items WHERE category = 'y'",
+    );
     assert.equal(rows[0].name, "c");
     assert.equal(rows[0].value, 30);
   });
@@ -95,7 +110,10 @@ describe("Dripline SDK", () => {
   });
 
   it("cache disabled", async () => {
-    dl = await Dripline.create({ plugins: [mockPlugin], cache: { enabled: false } });
+    dl = await Dripline.create({
+      plugins: [mockPlugin],
+      cache: { enabled: false },
+    });
     await dl.query("SELECT * FROM mock_items");
     await dl.query("SELECT * FROM mock_items");
     assert.equal(dl.cacheStats().hits, 0);
@@ -106,18 +124,22 @@ describe("Dripline SDK", () => {
     const plugin: PluginDef = {
       name: "auth_test",
       version: "1.0.0",
-      tables: [{
-        name: "auth_items",
-        columns: [{ name: "id", type: "number" }],
-        *list(ctx) {
-          receivedConfig = ctx.connection.config;
-          yield { id: 1 };
+      tables: [
+        {
+          name: "auth_items",
+          columns: [{ name: "id", type: "number" }],
+          *list(ctx) {
+            receivedConfig = ctx.connection.config;
+            yield { id: 1 };
+          },
         },
-      }],
+      ],
     };
     dl = await Dripline.create({
       plugins: [plugin],
-      connections: [{ name: "myconn", plugin: "auth_test", config: { token: "secret" } }],
+      connections: [
+        { name: "myconn", plugin: "auth_test", config: { token: "secret" } },
+      ],
     });
     await dl.query("SELECT * FROM auth_items");
     assert.equal(receivedConfig.token, "secret");
@@ -160,8 +182,9 @@ describe("SDK import paths", () => {
     assert.equal(typeof mod.syncGet, "function");
   });
 
-  it("index.ts exports githubPlugin", async () => {
+  it("index.ts exports syncExec", async () => {
     const mod = await import("../index.js");
-    assert.equal(typeof mod.githubPlugin, "function");
+    assert.equal(typeof mod.syncExec, "function");
+    assert.equal(typeof mod.commandExists, "function");
   });
 });

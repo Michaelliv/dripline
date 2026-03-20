@@ -1,6 +1,10 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createPluginAPI, resolvePluginExport, isPluginFunction } from "../plugin/api.js";
+import { describe, it } from "node:test";
+import {
+  createPluginAPI,
+  isPluginFunction,
+  resolvePluginExport,
+} from "../plugin/api.js";
 
 describe("createPluginAPI", () => {
   it("returns api and resolve", () => {
@@ -25,7 +29,9 @@ describe("createPluginAPI", () => {
     const { api, resolve } = createPluginAPI("t");
     api.registerTable("my_table", {
       columns: [{ name: "id", type: "number" }],
-      *list() { yield { id: 1 }; },
+      *list() {
+        yield { id: 1 };
+      },
     });
     const p = resolve();
     assert.equal(p.tables.length, 1);
@@ -39,7 +45,7 @@ describe("createPluginAPI", () => {
     });
     const p = resolve();
     assert.ok(p.connectionConfigSchema?.token);
-    assert.equal(p.connectionConfigSchema!.token.type, "string");
+    assert.equal(p.connectionConfigSchema?.token.type, "string");
   });
 
   it("resolve returns complete PluginDef", () => {
@@ -47,8 +53,14 @@ describe("createPluginAPI", () => {
     api.setName("full");
     api.setVersion("1.0.0");
     api.setConnectionSchema({ key: { type: "string" } });
-    api.registerTable("t1", { columns: [{ name: "id", type: "number" }], *list() {} });
-    api.registerTable("t2", { columns: [{ name: "id", type: "number" }], *list() {} });
+    api.registerTable("t1", {
+      columns: [{ name: "id", type: "number" }],
+      *list() {},
+    });
+    api.registerTable("t2", {
+      columns: [{ name: "id", type: "number" }],
+      *list() {},
+    });
     const p = resolve();
     assert.equal(p.name, "full");
     assert.equal(p.version, "1.0.0");
@@ -59,7 +71,10 @@ describe("createPluginAPI", () => {
   it("multiple tables", () => {
     const { api, resolve } = createPluginAPI("t");
     for (let i = 0; i < 5; i++) {
-      api.registerTable(`t${i}`, { columns: [{ name: "id", type: "number" }], *list() {} });
+      api.registerTable(`t${i}`, {
+        columns: [{ name: "id", type: "number" }],
+        *list() {},
+      });
     }
     assert.equal(resolve().tables.length, 5);
   });
@@ -67,7 +82,9 @@ describe("createPluginAPI", () => {
   it("onInit hook is stored", () => {
     const { api, resolve } = createPluginAPI("t");
     let called = false;
-    api.onInit(() => { called = true; });
+    api.onInit(() => {
+      called = true;
+    });
     const p = resolve() as any;
     assert.ok(p._initHooks);
     assert.equal(p._initHooks.length, 1);
@@ -92,7 +109,10 @@ describe("resolvePluginExport", () => {
   it("resolves function export", () => {
     const fn = (api: any) => {
       api.setName("fn-plugin");
-      api.registerTable("t", { columns: [{ name: "id", type: "number" }], *list() {} });
+      api.registerTable("t", {
+        columns: [{ name: "id", type: "number" }],
+        *list() {},
+      });
     };
     const p = resolvePluginExport(fn, "fallback");
     assert.equal(p.name, "fn-plugin");
@@ -106,7 +126,10 @@ describe("resolvePluginExport", () => {
   });
 
   it("throws on invalid export", () => {
-    assert.throws(() => resolvePluginExport("not a plugin" as any, "bad"), /Invalid plugin/);
+    assert.throws(
+      () => resolvePluginExport("not a plugin" as any, "bad"),
+      /Invalid plugin/,
+    );
   });
 });
 

@@ -3,11 +3,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
-import { join, resolve, basename } from "node:path";
 import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { findConfigDir } from "../config/loader.js";
 
 export interface PluginSource {
@@ -16,6 +16,8 @@ export interface PluginSource {
   ref?: string;
   url?: string;
   path?: string;
+  /** Subpath within a git repo, e.g. "plugins/docker" from git:repo#plugins/docker */
+  subpath?: string;
 }
 
 export interface InstalledPlugin {
@@ -60,6 +62,14 @@ export function parsePluginSource(source: string): PluginSource {
     let raw = source;
     if (raw.startsWith("git:")) raw = raw.slice(4);
 
+    // Extract #subpath (e.g. git:github.com/user/repo#plugins/docker)
+    let subpath: string | undefined;
+    const hashIdx = raw.indexOf("#");
+    if (hashIdx > 0) {
+      subpath = raw.slice(hashIdx + 1);
+      raw = raw.slice(0, hashIdx);
+    }
+
     let ref: string | undefined;
     const atIdx = raw.lastIndexOf("@");
     if (atIdx > 0 && !raw.slice(atIdx).includes("/")) {
@@ -68,13 +78,17 @@ export function parsePluginSource(source: string): PluginSource {
     }
 
     let url = raw;
-    if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("ssh://")) {
+    if (
+      !url.startsWith("http://") &&
+      !url.startsWith("https://") &&
+      !url.startsWith("ssh://")
+    ) {
       url = `https://${url}`;
     }
     if (!url.endsWith(".git")) url += ".git";
 
-    const name = basename(url, ".git");
-    return { type: "git", name, url, ref };
+    const name = subpath ? basename(subpath) : basename(url, ".git");
+    return { type: "git", name, url, ref, subpath };
   }
 
   const absPath = resolve(source);
@@ -135,18 +149,25 @@ export async function installPlugin(
     }
     case "git": {
       const url = new URL(parsed.url!);
-      const gitDir = join(pluginsDir, "git", url.hostname, url.pathname.replace(/\.git$/, ""));
+      const gitDir = join(
+        pluginsDir,
+        "git",
+        url.hostname,
+        url.pathname.replace(/\.git$/, ""),
+      );
       if (existsSync(gitDir)) {
         execSync("git pull", { cwd: gitDir, stdio: "pipe" });
       } else {
         mkdirSync(join(gitDir, ".."), { recursive: true });
         const refArg = parsed.ref ? `--branch ${parsed.ref}` : "";
-        execSync(`git clone ${refArg} ${parsed.url} ${gitDir}`, { stdio: "pipe" });
+        execSync(`git clone ${refArg} ${parsed.url} ${gitDir}`, {
+          stdio: "pipe",
+        });
       }
       if (existsSync(join(gitDir, "package.json"))) {
         execSync("npm install", { cwd: gitDir, stdio: "pipe" });
       }
-      installPath = gitDir;
+      installPath = parsed.subpath ? join(gitDir, parsed.subpath) : gitDir;
       break;
     }
     case "local": {
@@ -160,7 +181,11 @@ export async function installPlugin(
 
   const data = readPluginsJson();
   const existing = data.plugins.findIndex((p) => p.source === source);
-  const entry: InstalledPlugin = { source, path: installPath, name: parsed.name };
+  const entry: InstalledPlugin = {
+    source,
+    path: installPath,
+    name: parsed.name,
+  };
   if (existing >= 0) {
     data.plugins[existing] = entry;
   } else {

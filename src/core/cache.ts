@@ -1,4 +1,4 @@
-import type { CacheEntry, Qual } from "./plugin/types.js";
+import type { CacheEntry, Qual } from "../plugin/types.js";
 
 export class QueryCache {
   private cache: Map<string, CacheEntry<any>> = new Map();
@@ -8,7 +8,9 @@ export class QueryCache {
   private hits = 0;
   private misses = 0;
 
-  constructor(opts: { enabled?: boolean; ttl?: number; maxSize?: number } = {}) {
+  constructor(
+    opts: { enabled?: boolean; ttl?: number; maxSize?: number } = {},
+  ) {
     this.enabled = opts.enabled ?? true;
     this.defaultTtl = opts.ttl ?? 300;
     this.maxSize = opts.maxSize ?? 1000;

@@ -2,12 +2,16 @@
 
 import { createRequire } from "node:module";
 import { Command } from "commander";
+import {
+  connectionAdd,
+  connectionList,
+  connectionRemove,
+} from "./commands/connection.js";
 import { init } from "./commands/init.js";
-
+import { pluginInstall, pluginList, pluginRemove } from "./commands/plugin.js";
 import { query } from "./commands/query.js";
 import { repl } from "./commands/repl.js";
-import { pluginInstall, pluginRemove, pluginList } from "./commands/plugin.js";
-import { connectionAdd, connectionRemove, connectionList } from "./commands/connection.js";
+import { tables } from "./commands/tables.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
@@ -26,25 +30,35 @@ program
       process.env.NO_COLOR = "1";
     }
   })
-  .addHelpText("after", `
+  .addHelpText(
+    "after",
+    `
 Examples:
   $ dripline query "SELECT name, stargazers_count FROM github_repos WHERE owner = 'torvalds' LIMIT 5"
   $ dripline connection add gh --plugin github --set token=ghp_xxx
   $ dripline plugin list
   $ dripline                              # start interactive REPL
 
-https://github.com/Michaelliv/dripline`);
+https://github.com/Michaelliv/dripline`,
+  );
 
-const queryCmd = program
+const _queryCmd = program
   .command("query <sql>")
   .alias("q")
   .description("Execute a SQL query")
-  .option("-o, --output <format>", "Output format: table, json, csv, line", "table")
-  .addHelpText("after", `
+  .option(
+    "-o, --output <format>",
+    "Output format: table, json, csv, line",
+    "table",
+  )
+  .addHelpText(
+    "after",
+    `
 Examples:
   $ dripline query "SELECT * FROM github_repos WHERE owner = 'torvalds'"
   $ dripline q "SELECT name, language FROM github_repos WHERE owner = 'torvalds'" -o json
-  $ dripline query "SELECT r.name, COUNT(i.id) as issues FROM github_repos r JOIN github_issues i ON r.name = i.repo WHERE r.owner = 'x' AND i.owner = 'x' GROUP BY r.name"`)
+  $ dripline query "SELECT r.name, COUNT(i.id) as issues FROM github_repos r JOIN github_issues i ON r.name = i.repo WHERE r.owner = 'x' AND i.owner = 'x' GROUP BY r.name"`,
+  )
   .action(async (sql, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
     await query(sql, {
@@ -54,20 +68,35 @@ Examples:
     });
   });
 
-const connCmd = program.command("connection").alias("conn").description("Manage connections");
+const connCmd = program
+  .command("connection")
+  .alias("conn")
+  .description("Manage connections");
 
 connCmd
   .command("add <name>")
   .description("Add a connection")
   .requiredOption("-p, --plugin <plugin>", "Plugin name")
-  .option("-s, --set <key=value...>", "Config values", (v: string, prev: string[]) => [...prev, v], [])
-  .addHelpText("after", `
+  .option(
+    "-s, --set <key=value...>",
+    "Config values",
+    (v: string, prev: string[]) => [...prev, v],
+    [],
+  )
+  .addHelpText(
+    "after",
+    `
 Examples:
   $ dripline connection add gh --plugin github --set token=ghp_xxx
-  $ dripline connection add mydb --plugin postgres --set host=localhost --set port=5432`)
+  $ dripline connection add mydb --plugin postgres --set host=localhost --set port=5432`,
+  )
   .action(async (name, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
-    await connectionAdd(name, { plugin: opts.plugin, set: opts.set, json: globals.json });
+    await connectionAdd(name, {
+      plugin: opts.plugin,
+      set: opts.set,
+      json: globals.json,
+    });
   });
 
 connCmd
@@ -92,11 +121,14 @@ pluginCmd
   .command("install <source>")
   .description("Install a plugin (npm:pkg, git:repo, or local path)")
   .option("-g, --global", "Install globally")
-  .addHelpText("after", `
+  .addHelpText(
+    "after",
+    `
 Examples:
   $ dripline plugin install npm:@dripline/aws
   $ dripline plugin install git:github.com/user/repo
-  $ dripline plugin install ./my-plugin.ts`)
+  $ dripline plugin install ./my-plugin.ts`,
+  )
   .action(async (source, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
     await pluginInstall(source, { global: opts.global, json: globals.json });
@@ -116,6 +148,14 @@ pluginCmd
   .action(async (_opts, cmd) => {
     const globals = cmd.optsWithGlobals();
     await pluginList({ json: globals.json });
+  });
+
+program
+  .command("tables")
+  .description("List all available tables and their schemas")
+  .action(async (_opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    await tables({ json: globals.json });
   });
 
 program

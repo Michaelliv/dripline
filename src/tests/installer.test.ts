@@ -1,5 +1,5 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { describe, it } from "node:test";
 import { parsePluginSource } from "../plugin/installer.js";
 
 describe("parsePluginSource", () => {
@@ -69,5 +69,31 @@ describe("parsePluginSource", () => {
     const r = parsePluginSource("/tmp/my-plugin");
     assert.equal(r.type, "local");
     assert.equal(r.name, "my-plugin");
+  });
+
+  it("git with subpath", () => {
+    const r = parsePluginSource("git:github.com/user/dripline#plugins/docker");
+    assert.equal(r.type, "git");
+    assert.equal(r.name, "docker");
+    assert.equal(r.url, "https://github.com/user/dripline.git");
+    assert.equal(r.subpath, "plugins/docker");
+    assert.equal(r.ref, undefined);
+  });
+
+  it("git with subpath and ref", () => {
+    const r = parsePluginSource(
+      "git:github.com/user/dripline@main#plugins/github",
+    );
+    assert.equal(r.type, "git");
+    assert.equal(r.name, "github");
+    assert.equal(r.ref, "main");
+    assert.equal(r.subpath, "plugins/github");
+  });
+
+  it("https URL with subpath", () => {
+    const r = parsePluginSource("https://github.com/user/repo#plugins/brew");
+    assert.equal(r.type, "git");
+    assert.equal(r.name, "brew");
+    assert.equal(r.subpath, "plugins/brew");
   });
 });

@@ -1,15 +1,19 @@
-import * as readline from "node:readline";
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import * as readline from "node:readline";
 import chalk from "chalk";
-import { Dripline } from "../sdk.js";
-import { loadConfig, findConfigDir } from "../config/loader.js";
-import { loadBuiltinPlugins } from "../plugin/loader.js";
+import { findConfigDir, loadConfig } from "../config/loader.js";
+import { loadAllPlugins } from "../plugin/loader.js";
 import { registry } from "../plugin/registry.js";
-import { formatTable } from "../utils/table-formatter.js";
-import { formatJson, formatCsv, formatLine } from "../utils/formatters.js";
-import type { OutputFormat } from "./query.js";
+import { Dripline } from "../sdk.js";
+import { formatCsv, formatJson, formatLine } from "../utils/formatters.js";
 import { startSpinner } from "../utils/spinner.js";
+import { formatTable } from "../utils/table-formatter.js";
+import type { OutputFormat } from "./query.js";
 
 let outputFormat: OutputFormat = "table";
 let dl: Dripline;
@@ -31,13 +35,15 @@ function handleMeta(line: string): boolean {
         return true;
       }
       console.log();
-      for (const { plugin, table } of tables) {
+      for (const { table } of tables) {
         const keys = (table.keyColumns ?? [])
           .filter((k) => k.required === "required")
           .map((k) => k.name);
-        const keyStr = keys.length > 0 ? chalk.dim(` (requires: ${keys.join(", ")})`) : "";
+        const keyStr =
+          keys.length > 0 ? chalk.dim(` (requires: ${keys.join(", ")})`) : "";
         console.log(`  ${chalk.cyan(table.name)}${keyStr}`);
-        if (table.description) console.log(`    ${chalk.dim(table.description)}`);
+        if (table.description)
+          console.log(`    ${chalk.dim(table.description)}`);
       }
       console.log();
       return true;
@@ -61,9 +67,7 @@ function handleMeta(line: string): boolean {
       console.log(chalk.bold(table.name));
       if (table.description) console.log(chalk.dim(table.description));
       console.log();
-      const keyColNames = new Set(
-        (table.keyColumns ?? []).map((k) => k.name),
-      );
+      const keyColNames = new Set((table.keyColumns ?? []).map((k) => k.name));
       for (const col of table.columns) {
         const isKey = keyColNames.has(col.name);
         const marker = isKey ? chalk.yellow(" [key]") : "";
@@ -73,7 +77,10 @@ function handleMeta(line: string): boolean {
       }
       for (const kc of table.keyColumns ?? []) {
         if (!table.columns.find((c) => c.name === kc.name)) {
-          const req = kc.required === "required" ? chalk.red("[required]") : chalk.dim("[optional]");
+          const req =
+            kc.required === "required"
+              ? chalk.red("[required]")
+              : chalk.dim("[optional]");
           console.log(
             `  ${chalk.yellow(kc.name.padEnd(25))} ${chalk.dim("parameter".padEnd(10))} ${req}`,
           );
@@ -112,7 +119,9 @@ function handleMeta(line: string): boolean {
         outputFormat = fmt;
         console.log(`Output format: ${fmt}`);
       } else {
-        console.log(`Current: ${outputFormat}. Options: table, json, csv, line`);
+        console.log(
+          `Current: ${outputFormat}. Options: table, json, csv, line`,
+        );
       }
       return true;
     }
@@ -154,19 +163,22 @@ async function executeQuery(sql: string): Promise<void> {
       case "line":
         console.log(formatLine(rows));
         break;
-      case "table":
       default:
         console.log(formatTable(rows));
         break;
     }
-    console.log(chalk.dim(`Time: ${elapsed}s. ${rows.length} row${rows.length === 1 ? "" : "s"}.`));
+    console.log(
+      chalk.dim(
+        `Time: ${elapsed}s. ${rows.length} row${rows.length === 1 ? "" : "s"}.`,
+      ),
+    );
   } catch (e: any) {
     console.error(chalk.red(`Error: ${e.message}`));
   }
 }
 
 export async function repl(): Promise<void> {
-  await loadBuiltinPlugins();
+  await loadAllPlugins();
   const config = loadConfig();
   dl = await Dripline.create({
     plugins: registry.listPlugins(),
@@ -179,7 +191,9 @@ export async function repl(): Promise<void> {
   const historyFile = configDir ? join(configDir, "history") : null;
   const history: string[] = [];
   if (historyFile && existsSync(historyFile)) {
-    const lines = readFileSync(historyFile, "utf-8").split("\n").filter(Boolean);
+    const lines = readFileSync(historyFile, "utf-8")
+      .split("\n")
+      .filter(Boolean);
     history.push(...lines.slice(-500));
   }
 

@@ -32,18 +32,11 @@ export function formatTable(
 
   const lines: string[] = [];
 
-  lines.push(
-    `┌${keys.map((k) => "─".repeat(widths[k] + 2)).join("┬")}┐`,
-  );
+  lines.push(`┌${keys.map((k) => "─".repeat(widths[k] + 2)).join("┬")}┐`);
 
- 
-  lines.push(
-    `│${keys.map((k) => ` ${pad(k, widths[k])} `).join("│")}│`,
-  );
+  lines.push(`│${keys.map((k) => ` ${pad(k, widths[k])} `).join("│")}│`);
 
-  lines.push(
-    `├${keys.map((k) => "─".repeat(widths[k] + 2)).join("┼")}┤`,
-  );
+  lines.push(`├${keys.map((k) => "─".repeat(widths[k] + 2)).join("┼")}┤`);
 
   for (const row of rows) {
     lines.push(
@@ -51,9 +44,7 @@ export function formatTable(
     );
   }
 
-  lines.push(
-    `└${keys.map((k) => "─".repeat(widths[k] + 2)).join("┴")}┘`,
-  );
+  lines.push(`└${keys.map((k) => "─".repeat(widths[k] + 2)).join("┴")}┘`);
 
   lines.push(`\n${rows.length} row${rows.length === 1 ? "" : "s"}.`);
 

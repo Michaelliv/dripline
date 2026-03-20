@@ -1,15 +1,15 @@
 import { Database } from "duckdb-async";
-import type { DriplineConfig } from "./config/types.js";
+import { applyEnvOverrides, resolveEnvConnection } from "../config/loader.js";
+import type { DriplineConfig } from "../config/types.js";
+import type { PluginRegistry } from "../plugin/registry.js";
+import type {
+  ConnectionConfig,
+  Qual,
+  QueryContext,
+  TableDef,
+} from "../plugin/types.js";
 import { QueryCache } from "./cache.js";
 import { RateLimiter } from "./rate-limiter.js";
-import { PluginRegistry } from "./plugin/registry.js";
-import type {
-  TableDef,
-  ConnectionConfig,
-  QueryContext,
-  Qual,
-} from "./plugin/types.js";
-import { resolveEnvConnection, applyEnvOverrides } from "./config/loader.js";
 
 interface RegisteredTable {
   pluginName: string;
@@ -47,7 +47,12 @@ export class QueryEngine {
     for (const { plugin, table } of this.registry.getAllTables()) {
       const connections = config.connections.filter((c) => c.plugin === plugin);
       const pluginDef = this.registry.getPlugin(plugin);
-      await this.registerTable(plugin, table, connections, pluginDef?.connectionConfigSchema);
+      await this.registerTable(
+        plugin,
+        table,
+        connections,
+        pluginDef?.connectionConfigSchema,
+      );
     }
   }
 

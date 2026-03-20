@@ -1,13 +1,16 @@
 {
   "name": "dripline",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Query anything, one drip at a time",
   "type": "module",
   "main": "dist/index.js",
+  "workspaces": [
+    "plugins/*"
+  ],
   "exports": {
     ".": "./dist/index.js",
-    "./plugins/github": "./dist/plugins/github.js",
-    "./plugins/utils/http": "./dist/plugins/utils/http.js"
+    "./utils/http": "./dist/utils/http.js",
+    "./utils/cli": "./dist/utils/cli.js"
   },
   "bin": {
     "dripline": "./dist/main.js"
@@ -16,10 +19,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "postinstall": "test -L node_modules/dripline || ln -s .. node_modules/dripline",
+    "build": "tsc && npm run build --workspaces --if-present",
     "prepublishOnly": "npm run build",
     "dev": "npx tsx src/main.ts",
-    "test": "npx tsx --test src/tests/**/*.test.ts",
+    "test": "npx tsx --test src/tests/**/*.test.ts && npm test --workspaces --if-present",
     "smoke": "npx tsx smoke.ts",
     "format": "npx @biomejs/biome format --write src/",
     "lint": "npx @biomejs/biome lint src/",

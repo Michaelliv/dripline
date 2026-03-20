@@ -29,7 +29,8 @@ export function formatLine(rows: any[]): string {
   for (const row of rows) {
     const lines: string[] = [];
     for (const k of keys) {
-      const val = row[k] === null || row[k] === undefined ? "<null>" : String(row[k]);
+      const val =
+        row[k] === null || row[k] === undefined ? "<null>" : String(row[k]);
       lines.push(`${k.padEnd(maxKeyLen)} | ${val}`);
     }
     blocks.push(lines.join("\n"));

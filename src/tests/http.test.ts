@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { syncGet, syncGetPaginated } from "../plugins/utils/http.js";
+import { describe, it } from "node:test";
+import { syncGet, syncGetPaginated } from "../utils/http.js";
 
 describe("syncGet", () => {
   it("returns status, body, headers for 200", () => {

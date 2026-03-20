@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { QueryCache, configureCache } from "../cache.js";
+import { describe, it } from "node:test";
+import { QueryCache } from "../core/cache.js";
 
 function sleep(ms: number) {
   const end = Date.now() + ms;
@@ -49,28 +49,52 @@ describe("QueryCache", () => {
 
   it("getCacheKey is deterministic", () => {
     const c = new QueryCache();
-    const k1 = c.getCacheKey("t", [{ column: "a", operator: "=", value: 1 }], ["x", "y"]);
-    const k2 = c.getCacheKey("t", [{ column: "a", operator: "=", value: 1 }], ["x", "y"]);
+    const k1 = c.getCacheKey(
+      "t",
+      [{ column: "a", operator: "=", value: 1 }],
+      ["x", "y"],
+    );
+    const k2 = c.getCacheKey(
+      "t",
+      [{ column: "a", operator: "=", value: 1 }],
+      ["x", "y"],
+    );
     assert.equal(k1, k2);
   });
 
   it("getCacheKey sorts quals and columns", () => {
     const c = new QueryCache();
-    const k1 = c.getCacheKey("t", [
-      { column: "b", operator: "=", value: 2 },
-      { column: "a", operator: "=", value: 1 },
-    ], ["y", "x"]);
-    const k2 = c.getCacheKey("t", [
-      { column: "a", operator: "=", value: 1 },
-      { column: "b", operator: "=", value: 2 },
-    ], ["x", "y"]);
+    const k1 = c.getCacheKey(
+      "t",
+      [
+        { column: "b", operator: "=", value: 2 },
+        { column: "a", operator: "=", value: 1 },
+      ],
+      ["y", "x"],
+    );
+    const k2 = c.getCacheKey(
+      "t",
+      [
+        { column: "a", operator: "=", value: 1 },
+        { column: "b", operator: "=", value: 2 },
+      ],
+      ["x", "y"],
+    );
     assert.equal(k1, k2);
   });
 
   it("getCacheKey different quals produce different keys", () => {
     const c = new QueryCache();
-    const k1 = c.getCacheKey("t", [{ column: "a", operator: "=", value: 1 }], ["x"]);
-    const k2 = c.getCacheKey("t", [{ column: "a", operator: "=", value: 2 }], ["x"]);
+    const k1 = c.getCacheKey(
+      "t",
+      [{ column: "a", operator: "=", value: 1 }],
+      ["x"],
+    );
+    const k2 = c.getCacheKey(
+      "t",
+      [{ column: "a", operator: "=", value: 2 }],
+      ["x"],
+    );
     assert.notEqual(k1, k2);
   });
 

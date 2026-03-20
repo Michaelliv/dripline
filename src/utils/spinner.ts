@@ -1,6 +1,8 @@
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-export function startSpinner(message: string): { stop: (finalMessage?: string) => void } {
+export function startSpinner(message: string): {
+  stop: (finalMessage?: string) => void;
+} {
   if (!process.stderr.isTTY) {
     return { stop: () => {} };
   }

@@ -1,4 +1,4 @@
-import { initStore } from "../store.js";
+import { initStore } from "../core/store.js";
 import type { OutputOptions } from "../utils/output.js";
 import { cmd, hint, output, success } from "../utils/output.js";
 
@@ -15,7 +15,9 @@ export async function init(
     human: () => {
       success(`Initialized .dripline/ in ${process.cwd()}`);
       hint("Next: add a connection");
-      console.log(`  ${cmd("dripline connection add gh --plugin github --set token=ghp_xxx")}`);
+      console.log(
+        `  ${cmd("dripline connection add gh --plugin github --set token=ghp_xxx")}`,
+      );
     },
   });
 }

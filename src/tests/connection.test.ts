@@ -1,17 +1,21 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 import {
-  findConfigDir,
-  loadConfig,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import {
   addConnection,
-  removeConnection,
-  getConnection,
-  resolveEnvConnection,
   applyEnvOverrides,
+  getConnection,
+  loadConfig,
+  removeConnection,
+  resolveEnvConnection,
 } from "../config/loader.js";
 
 let origCwd: string;
@@ -46,7 +50,10 @@ function createDriplineDir() {
 
 function writeConfig(data: any) {
   createDriplineDir();
-  writeFileSync(join(tmpDir, ".dripline", "config.json"), JSON.stringify(data, null, 2));
+  writeFileSync(
+    join(tmpDir, ".dripline", "config.json"),
+    JSON.stringify(data, null, 2),
+  );
 }
 
 describe("connection management", () => {
@@ -61,7 +68,9 @@ describe("connection management", () => {
   });
 
   it("addConnection updates existing by name", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: { token: "old" } }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: { token: "old" } }],
+    });
     addConnection({ name: "gh", plugin: "github", config: { token: "new" } });
     const config = loadConfig();
     assert.equal(config.connections.length, 1);
@@ -69,7 +78,9 @@ describe("connection management", () => {
   });
 
   it("removeConnection removes and returns true", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: {} }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: {} }],
+    });
     assert.equal(removeConnection("gh"), true);
     assert.equal(loadConfig().connections.length, 0);
   });
@@ -80,7 +91,9 @@ describe("connection management", () => {
   });
 
   it("getConnection returns matching connection", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: { token: "x" } }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: { token: "x" } }],
+    });
     const c = getConnection("gh");
     assert.equal(c?.config.token, "x");
   });
@@ -105,8 +118,8 @@ describe("env var resolution", () => {
     process.env.GITHUB_TOKEN = "env_token";
     const conn = resolveEnvConnection("github", ghSchema);
     assert.ok(conn);
-    assert.equal(conn!.config.token, "env_token");
-    assert.equal(conn!.plugin, "github");
+    assert.equal(conn?.config.token, "env_token");
+    assert.equal(conn?.plugin, "github");
     delete process.env.GITHUB_TOKEN;
   });
 
@@ -123,8 +136,8 @@ describe("env var resolution", () => {
     process.env.AWS_SECRET_ACCESS_KEY = "sk";
     const conn = resolveEnvConnection("aws", awsSchema);
     assert.ok(conn);
-    assert.equal(conn!.config.access_key, "ak");
-    assert.equal(conn!.config.secret_key, "sk");
+    assert.equal(conn?.config.access_key, "ak");
+    assert.equal(conn?.config.secret_key, "sk");
     delete process.env.AWS_ACCESS_KEY_ID;
     delete process.env.AWS_SECRET_ACCESS_KEY;
   });
@@ -164,10 +177,13 @@ describe("connection CLI", () => {
   it("connection add + list + remove", () => {
     createDriplineDir();
 
-    execSync(`npx tsx ${MAIN_TS} connection add gh --plugin github --set token=test123`, {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
+    execSync(
+      `npx tsx ${MAIN_TS} connection add gh --plugin github --set token=test123`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+      },
+    );
 
     const listOut = execSync(`npx tsx ${MAIN_TS} conn list --json`, {
       cwd: tmpDir,
@@ -193,10 +209,13 @@ describe("connection CLI", () => {
   it("connection add with multiple --set flags", () => {
     createDriplineDir();
 
-    execSync(`npx tsx ${MAIN_TS} connection add myaws --plugin aws --set access_key=ak --set secret_key=sk`, {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
+    execSync(
+      `npx tsx ${MAIN_TS} connection add myaws --plugin aws --set access_key=ak --set secret_key=sk`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+      },
+    );
 
     const listOut = execSync(`npx tsx ${MAIN_TS} conn list --json`, {
       cwd: tmpDir,
@@ -210,10 +229,13 @@ describe("connection CLI", () => {
   it("connection list masks token values", () => {
     createDriplineDir();
 
-    execSync(`npx tsx ${MAIN_TS} connection add gh --plugin github --set token=ghp_supersecrettoken`, {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
+    execSync(
+      `npx tsx ${MAIN_TS} connection add gh --plugin github --set token=ghp_supersecrettoken`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+      },
+    );
 
     const out = execSync(`npx tsx ${MAIN_TS} conn list`, {
       cwd: tmpDir,

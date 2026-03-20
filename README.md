@@ -48,6 +48,7 @@ SQL query > DuckDB > plugin (sync generator) > API call > yield rows > materiali
 ```bash
 dripline                              # Interactive REPL
 dripline query "<sql>"                # Execute a query (alias: dripline q)
+dripline tables                       # List all tables and schemas (--json for full schema)
 dripline init                         # Create .dripline/ directory
 dripline connection add <name>        # Add a connection (--plugin, --set key=val)
 dripline connection list              # List connections
@@ -78,16 +79,44 @@ dripline plugin remove <name>         # Uninstall a plugin
 
 ## Plugins
 
-### GitHub (built-in)
+dripline ships with no built-in plugins. Install what you need:
 
-| Table | Required WHERE | Description |
-|-------|---------------|-------------|
-| `github_repos` | `owner` | Repositories |
-| `github_issues` | `owner`, `repo` | Issues |
-| `github_pull_requests` | `owner`, `repo` | Pull requests |
-| `github_stargazers` | `owner`, `repo` | Stargazers |
+```bash
+dripline plugin install git:github.com/Michaelliv/dripline#plugins/github
+dripline plugin install git:github.com/Michaelliv/dripline#plugins/docker
+```
+
+### Official Plugins
+
+All plugins install via `dripline plugin install git:github.com/Michaelliv/dripline#plugins/<name>`.
+
+| Plugin | Tables | Source |
+|--------|--------|--------|
+| **github** | `github_repos`, `github_issues`, `github_pull_requests`, `github_stargazers` | GitHub API |
+| **docker** | `docker_containers`, `docker_images`, `docker_volumes`, `docker_networks` | Docker CLI |
+| **brew** | `brew_formulae`, `brew_casks`, `brew_outdated`, `brew_services` | Homebrew |
+| **ps** | `ps_processes`, `ps_ports` | ps, lsof |
+| **git** | `git_commits`, `git_branches`, `git_tags`, `git_remotes`, `git_status` | Git CLI |
+| **system-profiler** | `sys_software`, `sys_hardware`, `sys_network_interfaces`, `sys_storage`, `sys_displays` | macOS system_profiler |
+| **pi** | `pi_sessions`, `pi_messages`, `pi_tool_calls`, `pi_costs`, `pi_prompt`, `pi_generate` | pi session files + pi CLI |
+| **kubectl** | `k8s_pods`, `k8s_services`, `k8s_deployments`, `k8s_nodes`, `k8s_namespaces`, `k8s_configmaps`, `k8s_secrets`, `k8s_ingresses` | kubectl |
+| **npm** | `npm_packages`, `npm_outdated`, `npm_global`, `npm_scripts` | npm CLI |
+| **spotlight** | `spotlight_search`, `spotlight_apps`, `spotlight_recent` | macOS Spotlight |
+| **skills-sh** | `skills_search` | skills.sh API |
+| **cloudflare** | `cf_workers`, `cf_zones`, `cf_dns_records`, `cf_pages_projects`, `cf_pages_deployments`, `cf_d1_databases`, `cf_kv_namespaces`, `cf_r2_buckets`, `cf_queues`, `cf_dns_lookup`, `cf_domain_check` | Cloudflare API |
+| **vercel** | `vercel_projects`, `vercel_deployments`, `vercel_domains`, `vercel_env_vars` | Vercel API |
 
 ```sql
+-- GitHub: top repos by stars
+SELECT name, stargazers_count, language
+FROM github_repos
+WHERE owner = 'torvalds'
+ORDER BY stargazers_count DESC LIMIT 5;
+
+-- Docker: running containers
+SELECT name, image, state FROM docker_containers;
+
+-- Join across plugins
 SELECT r.name, COUNT(i.id) as issues
 FROM github_repos r
 JOIN github_issues i ON r.name = i.repo
@@ -128,8 +157,8 @@ WHERE owner = 'torvalds' AND stargazers_count > 0;
 ### Installing plugins
 
 ```bash
-dripline plugin install npm:@dripline/aws
-dripline plugin install git:github.com/user/repo
+dripline plugin install git:github.com/Michaelliv/dripline#plugins/brew
+dripline plugin install git:github.com/user/their-plugin
 dripline plugin install ./my-plugin.ts
 ```
 
@@ -137,7 +166,10 @@ Plugins auto-discover from `.dripline/plugins/` (project) and `~/.dripline/plugi
 
 ### Writing a plugin
 
+Plugins can wrap **APIs** (using `syncGet`) or **local CLIs** (using `syncExec`):
+
 ```typescript
+// API plugin
 import type { DriplinePluginAPI } from "dripline";
 import { syncGetPaginated } from "dripline";
 
@@ -169,14 +201,51 @@ export default function(dl: DriplinePluginAPI) {
 }
 ```
 
-Plugins are sync generators. `list` yields rows, HTTP calls use `execFileSync("curl", ...)`. Key columns are extracted from WHERE clauses and passed to the plugin. DuckDB handles the rest (joins, window functions, aggregation).
+```typescript
+// CLI plugin
+import type { DriplinePluginAPI } from "dripline";
+import { syncExec } from "dripline";
+
+export default function(dl: DriplinePluginAPI) {
+  dl.setName("my-cli");
+  dl.setVersion("1.0.0");
+
+  dl.registerTable("my_processes", {
+    columns: [
+      { name: "name", type: "string" },
+      { name: "cpu", type: "number" },
+    ],
+    *list() {
+      const { rows } = syncExec("my-tool", ["list", "--json"], { parser: "json" });
+      for (const r of rows) {
+        yield { name: r.name, cpu: r.cpu };
+      }
+    },
+  });
+}
+```
+
+Plugins are sync generators. `list` yields rows. Key columns are extracted from WHERE clauses and passed to the plugin. DuckDB handles the rest (joins, window functions, aggregation).
+
+#### `syncExec` parsers
+
+| Parser | Description |
+|--------|-------------|
+| `json` | Parse stdout as JSON (array or object) |
+| `jsonlines` | One JSON object per line |
+| `csv` | Comma-separated with headers |
+| `tsv` | Tab-separated with headers |
+| `lines` | Each line as `{ line_number, line }` |
+| `kv` | Key-value pairs (`key=value` per line) |
+| `raw` | Raw string as `{ output }` |
 
 ## SDK
 
 Use dripline as a library:
 
 ```typescript
-import { Dripline, githubPlugin } from "dripline";
+import { Dripline } from "dripline";
+import githubPlugin from "dripline-plugin-github";
 
 const dl = await Dripline.create({
   plugins: [githubPlugin],
@@ -216,7 +285,9 @@ Full config format:
 
 ## For Agents
 
-Every command supports `--json`.
+Every command supports `--json`. Use `dripline tables --json` to get full table schemas.
+
+A [pi](https://github.com/badlogic/pi-mono) extension is included at `.pi/extensions/pi-dripline-context/` that automatically injects available tables into the agent's context on session start.
 
 ## Development
 

@@ -1,43 +1,17 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { PluginDef } from "./types.js";
-import { registry } from "./registry.js";
-import { resolvePluginExport } from "./api.js";
 import { findConfigDir } from "../config/loader.js";
+import { resolvePluginExport } from "./api.js";
+import { registry } from "./registry.js";
+import type { PluginDef } from "./types.js";
 
 export async function loadPluginFromPath(path: string): Promise<PluginDef> {
   const absPath = resolve(path);
   const mod = await import(pathToFileURL(absPath).href);
   const pluginId = absPath.replace(/.*\//, "").replace(/\.(ts|js)$/, "");
   return resolvePluginExport(mod.default, pluginId);
-}
-
-export async function loadBuiltinPlugins(): Promise<void> {
-  const pluginsDir = new URL("../plugins", import.meta.url);
-  const dirPath = pluginsDir.pathname;
-  if (!existsSync(dirPath)) return;
-
-  const files = readdirSync(dirPath).filter(
-    (f) =>
-      (f.endsWith(".ts") || f.endsWith(".js")) &&
-      !f.endsWith(".d.ts") &&
-      !f.endsWith(".test.ts") &&
-      !f.startsWith("_"),
-  );
-
-  for (const file of files) {
-    const mod = await import(pathToFileURL(join(dirPath, file)).href);
-    if (mod.default) {
-      try {
-        const pluginId = file.replace(/\.(ts|js)$/, "");
-        const plugin = resolvePluginExport(mod.default, pluginId);
-        registry.register(plugin);
-      } catch {
-      }
-    }
-  }
 }
 
 async function loadFromDirectory(dir: string): Promise<PluginDef[]> {
@@ -50,18 +24,26 @@ async function loadFromDirectory(dir: string): Promise<PluginDef[]> {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
 
-    if (stat.isFile() && (entry.endsWith(".ts") || entry.endsWith(".js")) && !entry.endsWith(".d.ts") && !entry.endsWith(".test.ts")) {
+    if (
+      stat.isFile() &&
+      (entry.endsWith(".ts") || entry.endsWith(".js")) &&
+      !entry.endsWith(".d.ts") &&
+      !entry.endsWith(".test.ts")
+    ) {
       try {
         plugins.push(await loadPluginFromPath(fullPath));
-      } catch {
-      }
+      } catch {}
     } else if (stat.isDirectory()) {
       const indexTs = join(fullPath, "index.ts");
       const indexJs = join(fullPath, "index.js");
       if (existsSync(indexTs)) {
-        try { plugins.push(await loadPluginFromPath(indexTs)); } catch {}
+        try {
+          plugins.push(await loadPluginFromPath(indexTs));
+        } catch {}
       } else if (existsSync(indexJs)) {
-        try { plugins.push(await loadPluginFromPath(indexJs)); } catch {}
+        try {
+          plugins.push(await loadPluginFromPath(indexJs));
+        } catch {}
       }
 
       const pkgJson = join(fullPath, "package.json");
@@ -70,7 +52,9 @@ async function loadFromDirectory(dir: string): Promise<PluginDef[]> {
           const pkg = JSON.parse(readFileSync(pkgJson, "utf-8"));
           const pluginPaths: string[] = pkg.dripline?.plugins ?? [];
           for (const p of pluginPaths) {
-            try { plugins.push(await loadPluginFromPath(join(fullPath, p))); } catch {}
+            try {
+              plugins.push(await loadPluginFromPath(join(fullPath, p)));
+            } catch {}
           }
         } catch {}
       }
@@ -93,11 +77,9 @@ export async function loadPluginsFromConfig(configDir: string): Promise<void> {
       try {
         const plugin = await loadPluginFromPath(p);
         registry.register(plugin);
-      } catch {
-      }
+      } catch {}
     }
-  } catch {
-  }
+  } catch {}
 }
 
 export async function loadAllPlugins(): Promise<void> {
@@ -108,11 +90,6 @@ export async function loadAllPlugins(): Promise<void> {
       registry.register(plugin);
       loaded.add(plugin.name);
     }
-  }
-
-  await loadBuiltinPlugins();
-  for (const p of registry.listPlugins()) {
-    loaded.add(p.name);
   }
 
   const configDir = findConfigDir();

@@ -1,14 +1,12 @@
 import chalk from "chalk";
-import { loadBuiltinPlugins, loadAllPlugins } from "../plugin/loader.js";
-import { registry } from "../plugin/registry.js";
 import {
   installPlugin,
-  removePlugin,
   listInstalled,
-  parsePluginSource,
+  removePlugin,
 } from "../plugin/installer.js";
-import { loadPluginFromPath } from "../plugin/loader.js";
-import { success, error, info, bold, dim } from "../utils/output.js";
+import { loadAllPlugins, loadPluginFromPath } from "../plugin/loader.js";
+import { registry } from "../plugin/registry.js";
+import { bold, dim, error, success } from "../utils/output.js";
 
 export async function pluginInstall(
   source: string,

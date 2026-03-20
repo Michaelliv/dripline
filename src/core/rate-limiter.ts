@@ -1,4 +1,4 @@
-import type { RateLimitConfig } from "./plugin/types.js";
+import type { RateLimitConfig } from "../plugin/types.js";
 
 interface TokenBucket {
   tokens: number;
@@ -14,7 +14,9 @@ export class RateLimiter {
   private buckets: Map<string, TokenBucket> = new Map();
 
   configure(scope: string, config: RateLimitConfig): void {
-    const rate = config.maxPerSecond ?? (config.maxPerMinute ? config.maxPerMinute / 60 : 0);
+    const rate =
+      config.maxPerSecond ??
+      (config.maxPerMinute ? config.maxPerMinute / 60 : 0);
     this.buckets.set(scope, {
       tokens: rate || 100,
       maxTokens: rate || 100,
@@ -40,17 +42,23 @@ export class RateLimiter {
 
     return new Promise<void>((resolve) => {
       bucket.queue.push({ resolve });
-      const interval = setInterval(() => {
-        this.refill(bucket);
-        if (bucket.tokens >= 1 && bucket.activeConcurrent < bucket.maxConcurrent) {
-          bucket.tokens -= 1;
-          bucket.activeConcurrent++;
-          clearInterval(interval);
-          const idx = bucket.queue.findIndex((q) => q.resolve === resolve);
-          if (idx >= 0) bucket.queue.splice(idx, 1);
-          resolve();
-        }
-      }, Math.max(10, Math.ceil(1000 / bucket.refillRate)));
+      const interval = setInterval(
+        () => {
+          this.refill(bucket);
+          if (
+            bucket.tokens >= 1 &&
+            bucket.activeConcurrent < bucket.maxConcurrent
+          ) {
+            bucket.tokens -= 1;
+            bucket.activeConcurrent++;
+            clearInterval(interval);
+            const idx = bucket.queue.findIndex((q) => q.resolve === resolve);
+            if (idx >= 0) bucket.queue.splice(idx, 1);
+            resolve();
+          }
+        },
+        Math.max(10, Math.ceil(1000 / bucket.refillRate)),
+      );
     });
   }
 
@@ -68,14 +76,17 @@ export class RateLimiter {
 
     while (true) {
       this.refill(bucket);
-      if (bucket.tokens >= 1 && bucket.activeConcurrent < bucket.maxConcurrent) {
+      if (
+        bucket.tokens >= 1 &&
+        bucket.activeConcurrent < bucket.maxConcurrent
+      ) {
         bucket.tokens -= 1;
         bucket.activeConcurrent++;
         return;
       }
-      const waitUntil = Date.now() + Math.max(1, Math.ceil(1000 / bucket.refillRate));
-      while (Date.now() < waitUntil) {
-      }
+      const waitUntil =
+        Date.now() + Math.max(1, Math.ceil(1000 / bucket.refillRate));
+      while (Date.now() < waitUntil) {}
     }
   }
 
@@ -88,7 +99,10 @@ export class RateLimiter {
   private refill(bucket: TokenBucket): void {
     const now = Date.now();
     const elapsed = (now - bucket.lastRefill) / 1000;
-    bucket.tokens = Math.min(bucket.maxTokens, bucket.tokens + elapsed * bucket.refillRate);
+    bucket.tokens = Math.min(
+      bucket.maxTokens,
+      bucket.tokens + elapsed * bucket.refillRate,
+    );
     bucket.lastRefill = now;
   }
 }

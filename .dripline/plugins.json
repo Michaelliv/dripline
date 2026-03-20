@@ -1,0 +1,69 @@
+{
+  "plugins": [
+    {
+      "source": "./plugins/docker/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/docker/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/github/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/github/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/brew/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/brew/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/ps/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/ps/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/git/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/git/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/system-profiler/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/system-profiler/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/pi/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/pi/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/kubectl/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/kubectl/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/npm/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/npm/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/spotlight/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/spotlight/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/skills-sh/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/skills-sh/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/cloudflare/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/cloudflare/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/vercel/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/vercel/src/index.ts",
+      "name": "index"
+    }
+  ]
+}

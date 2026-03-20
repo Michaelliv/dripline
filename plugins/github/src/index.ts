@@ -1,6 +1,5 @@
-import type { DriplinePluginAPI } from "../plugin/api.js";
-import type { QueryContext } from "../plugin/types.js";
-import { syncGet, syncGetPaginated } from "./utils/http.js";
+import type { DriplinePluginAPI, QueryContext } from "dripline";
+import { syncGet, syncGetPaginated } from "dripline";
 
 const API = "https://api.github.com";
 

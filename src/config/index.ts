@@ -1,11 +1,11 @@
-export * from "./types.js";
 export {
-  findConfigDir,
-  loadConfig,
-  saveConfig,
-  getConnection,
   addConnection,
+  applyEnvOverrides,
+  findConfigDir,
+  getConnection,
+  loadConfig,
   removeConnection,
   resolveEnvConnection,
-  applyEnvOverrides,
+  saveConfig,
 } from "./loader.js";
+export * from "./types.js";

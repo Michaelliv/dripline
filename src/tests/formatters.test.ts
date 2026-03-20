@@ -1,7 +1,7 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { describe, it } from "node:test";
+import { formatCsv, formatJson, formatLine } from "../utils/formatters.js";
 import { formatTable } from "../utils/table-formatter.js";
-import { formatJson, formatCsv, formatLine } from "../utils/formatters.js";
 
 describe("formatTable", () => {
   it("empty array returns No results.", () => {

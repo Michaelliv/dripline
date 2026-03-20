@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import githubFn from "../plugins/github.js";
-import { resolvePluginExport } from "../plugin/api.js";
-import type { ColumnType, PluginDef } from "../plugin/types.js";
+import githubFn from "./index.js";
+import { resolvePluginExport } from "dripline";
+import type { ColumnType, PluginDef } from "dripline";
 
 const VALID_TYPES: ColumnType[] = ["string", "number", "boolean", "json", "datetime"];
 

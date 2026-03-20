@@ -1,19 +1,23 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { init } from "../commands/init.js";
 
 let origCwd: string;
 let tmpDir: string;
-let captured: string[];
+let _captured: string[];
 
 function setup() {
   origCwd = process.cwd();
   tmpDir = realpathSync(mkdtempSync(join(tmpdir(), "dripline-cmd-test-")));
   process.chdir(tmpDir);
-  captured = [];
+  _captured = [];
 }
 
 function teardown() {
@@ -26,15 +30,17 @@ function captureLog(fn: () => Promise<void>): Promise<string[]> {
   const lines: string[] = [];
   console.log = (...args: any[]) => lines.push(args.map(String).join(" "));
   console.error = (...args: any[]) => lines.push(args.map(String).join(" "));
-  return fn().then(() => {
-    console.log = origLog;
-    console.error = origErr;
-    return lines;
-  }).catch((e) => {
-    console.log = origLog;
-    console.error = origErr;
-    throw e;
-  });
+  return fn()
+    .then(() => {
+      console.log = origLog;
+      console.error = origErr;
+      return lines;
+    })
+    .catch((e) => {
+      console.log = origLog;
+      console.error = origErr;
+      throw e;
+    });
 }
 
 describe("init command", () => {
@@ -106,10 +112,11 @@ describe("query command", () => {
   it("query with invalid SQL shows error", async () => {
     const { execSync } = await import("node:child_process");
     try {
-      execSync(
-        `npx tsx ${MAIN_TS} query "INVALID SQL GARBAGE"`,
-        { cwd: tmpDir, encoding: "utf-8", stdio: "pipe" },
-      );
+      execSync(`npx tsx ${MAIN_TS} query "INVALID SQL GARBAGE"`, {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
       assert.fail("should have thrown");
     } catch (e: any) {
       assert.ok(e.stderr.includes("✗") || e.status !== 0);

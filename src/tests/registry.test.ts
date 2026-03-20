@@ -1,5 +1,5 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { describe, it } from "node:test";
 import { PluginRegistry } from "../plugin/registry.js";
 import type { PluginDef } from "../plugin/types.js";
 
@@ -10,7 +10,9 @@ function makePlugin(name: string, tableNames: string[]): PluginDef {
     tables: tableNames.map((t) => ({
       name: t,
       columns: [{ name: "id", type: "number" as const }],
-      *list() { yield { id: 1 }; },
+      *list() {
+        yield { id: 1 };
+      },
     })),
   };
 }

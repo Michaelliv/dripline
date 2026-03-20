@@ -1,15 +1,21 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import {
-  findConfigDir,
-  loadConfig,
-  saveConfig,
-  getConnection,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import {
   addConnection,
+  findConfigDir,
+  getConnection,
+  loadConfig,
   removeConnection,
+  saveConfig,
 } from "../config/loader.js";
 import { DEFAULT_CONFIG } from "../config/types.js";
 
@@ -32,7 +38,10 @@ function createDriplineDir() {
 
 function writeConfig(data: any) {
   createDriplineDir();
-  writeFileSync(join(tmpDir, ".dripline", "config.json"), JSON.stringify(data, null, 2));
+  writeFileSync(
+    join(tmpDir, ".dripline", "config.json"),
+    JSON.stringify(data, null, 2),
+  );
 }
 
 describe("Config", () => {
@@ -82,20 +91,32 @@ describe("Config", () => {
 
   it("saveConfig creates config.json", () => {
     createDriplineDir();
-    saveConfig({ ...DEFAULT_CONFIG, connections: [{ name: "x", plugin: "y", config: {} }] });
-    const raw = JSON.parse(readFileSync(join(tmpDir, ".dripline", "config.json"), "utf-8"));
+    saveConfig({
+      ...DEFAULT_CONFIG,
+      connections: [{ name: "x", plugin: "y", config: {} }],
+    });
+    const raw = JSON.parse(
+      readFileSync(join(tmpDir, ".dripline", "config.json"), "utf-8"),
+    );
     assert.equal(raw.connections[0].name, "x");
   });
 
   it("saveConfig overwrites existing", () => {
     writeConfig({ connections: [{ name: "old", plugin: "p", config: {} }] });
-    saveConfig({ ...DEFAULT_CONFIG, connections: [{ name: "new", plugin: "p", config: {} }] });
-    const raw = JSON.parse(readFileSync(join(tmpDir, ".dripline", "config.json"), "utf-8"));
+    saveConfig({
+      ...DEFAULT_CONFIG,
+      connections: [{ name: "new", plugin: "p", config: {} }],
+    });
+    const raw = JSON.parse(
+      readFileSync(join(tmpDir, ".dripline", "config.json"), "utf-8"),
+    );
     assert.equal(raw.connections[0].name, "new");
   });
 
   it("getConnection returns matching", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: { token: "t" } }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: { token: "t" } }],
+    });
     const c = getConnection("gh");
     assert.equal(c?.plugin, "github");
   });
@@ -114,7 +135,9 @@ describe("Config", () => {
   });
 
   it("addConnection updates existing by name", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: { token: "old" } }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: { token: "old" } }],
+    });
     addConnection({ name: "gh", plugin: "github", config: { token: "new" } });
     const c = loadConfig();
     assert.equal(c.connections.length, 1);
@@ -122,7 +145,9 @@ describe("Config", () => {
   });
 
   it("removeConnection removes and returns true", () => {
-    writeConfig({ connections: [{ name: "gh", plugin: "github", config: {} }] });
+    writeConfig({
+      connections: [{ name: "gh", plugin: "github", config: {} }],
+    });
     assert.equal(removeConnection("gh"), true);
     assert.equal(loadConfig().connections.length, 0);
   });

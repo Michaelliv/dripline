@@ -1,19 +1,18 @@
-export * from "./types.js";
-export { PluginRegistry, registry } from "./registry.js";
-export {
-  loadPluginFromPath,
-  loadBuiltinPlugins,
-  loadPluginsFromConfig,
-  loadAllPlugins,
-} from "./loader.js";
-export {
-  createPluginAPI,
-  resolvePluginExport,
-  isPluginFunction,
-} from "./api.js";
 export type {
   DriplinePluginAPI,
   PluginFunction,
-  TableDefinition,
   SchemaField,
+  TableDefinition,
 } from "./api.js";
+export {
+  createPluginAPI,
+  isPluginFunction,
+  resolvePluginExport,
+} from "./api.js";
+export {
+  loadAllPlugins,
+  loadPluginFromPath,
+  loadPluginsFromConfig,
+} from "./loader.js";
+export { PluginRegistry, registry } from "./registry.js";
+export * from "./types.js";

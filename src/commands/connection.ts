@@ -1,10 +1,10 @@
 import chalk from "chalk";
 import {
-  loadConfig,
   addConnection,
+  loadConfig,
   removeConnection,
 } from "../config/loader.js";
-import { success, error, bold, dim } from "../utils/output.js";
+import { bold, dim, error, success } from "../utils/output.js";
 
 export async function connectionAdd(
   name: string,
@@ -23,7 +23,9 @@ export async function connectionAdd(
   addConnection({ name, plugin: options.plugin, config });
 
   if (options.json) {
-    console.log(JSON.stringify({ success: true, name, plugin: options.plugin }));
+    console.log(
+      JSON.stringify({ success: true, name, plugin: options.plugin }),
+    );
   } else {
     success(`Added connection ${bold(name)} (${options.plugin})`);
   }
@@ -43,7 +45,9 @@ export async function connectionRemove(
   }
 }
 
-export async function connectionList(options: { json?: boolean }): Promise<void> {
+export async function connectionList(options: {
+  json?: boolean;
+}): Promise<void> {
   const config = loadConfig();
 
   if (options.json) {
@@ -53,7 +57,11 @@ export async function connectionList(options: { json?: boolean }): Promise<void>
 
   if (config.connections.length === 0) {
     console.log("No connections configured.");
-    console.log(dim(`  Add one: dripline connection add <name> --plugin <plugin> --set key=value`));
+    console.log(
+      dim(
+        `  Add one: dripline connection add <name> --plugin <plugin> --set key=value`,
+      ),
+    );
     return;
   }
 
@@ -64,7 +72,9 @@ export async function connectionList(options: { json?: boolean }): Promise<void>
       const v = String(conn.config[k]);
       return `${k}=${v.length > 8 ? `${v.slice(0, 4)}...` : v}`;
     });
-    console.log(`  ${chalk.cyan(conn.name)} > ${conn.plugin}  ${dim(masked.join(", "))}`);
+    console.log(
+      `  ${chalk.cyan(conn.name)} > ${conn.plugin}  ${dim(masked.join(", "))}`,
+    );
   }
   console.log();
 }
