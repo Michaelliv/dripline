@@ -16,7 +16,7 @@ const program = new Command();
 
 program
   .name("dripline")
-  .description("Query APIs using SQL")
+  .description("Query anything, one drip at a time")
   .version(`dripline ${version}`, "-v, --version")
   .option("--json", "Output as JSON")
   .option("-q, --quiet", "Suppress output")

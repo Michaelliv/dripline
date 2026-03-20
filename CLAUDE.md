@@ -1,6 +1,6 @@
 # dripline
 
-Query APIs using SQL.
+Query anything, one drip at a time.
 
 ## Commands
 
