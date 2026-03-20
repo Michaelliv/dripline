@@ -37,7 +37,11 @@
   "bugs": {
     "url": "https://github.com/Michaelliv/dripline/issues"
   },
+  "pi": {
+    "extensions": [".pi/extensions/pi-dripline-context/index.ts"]
+  },
   "keywords": [
+    "pi-package",
     "sql",
     "cloud",
     "api",

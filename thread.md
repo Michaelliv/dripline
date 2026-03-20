@@ -4,7 +4,11 @@ introducing dripline — turns any api, cli, or cloud service into a sql table. 
 
 13 plugins, 57 tables. github, docker, brew, kubectl, cloudflare, vercel, and more.
 
-obligatory @mariozechner pi extension that injects all available tables into your agent's context so it knows what it can query 💧🧵
+obligatory @mariozechner pi extension that injects all available tables into your agent's context so it knows what it can query:
+
+pi install git:github.com/Michaelliv/dripline
+
+💧🧵
 
 [snippet 1]
 dripline plugin install git:github.com/Michaelliv/dripline#plugins/docker
