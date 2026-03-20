@@ -65,6 +65,7 @@ export class Dripline {
     const config: DriplineConfig = {
       connections: connections ?? [],
       cache: {
+        enabled: true,
         ttl: 300,
         maxSize: 1000,
       },

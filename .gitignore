@@ -22,3 +22,6 @@ bun.lock
 .env
 .env.local
 .env.*.local
+
+# dripline config (may contain tokens)
+.dripline/config.json

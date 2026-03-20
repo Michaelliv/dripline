@@ -59,6 +59,7 @@ export interface PluginDef {
       required?: boolean;
       description?: string;
       default?: any;
+      env?: string;
     }
   >;
 }
