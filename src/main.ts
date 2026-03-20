@@ -3,7 +3,7 @@
 import { createRequire } from "node:module";
 import { Command } from "commander";
 import { init } from "./commands/init.js";
-import { onboard } from "./commands/onboard.js";
+
 import { query } from "./commands/query.js";
 import { repl } from "./commands/repl.js";
 import { pluginInstall, pluginRemove, pluginList } from "./commands/plugin.js";
@@ -134,14 +134,6 @@ program
   .action(async (_opts, cmd) => {
     const root = cmd.optsWithGlobals();
     await init([], { json: root.json, quiet: root.quiet });
-  });
-
-program
-  .command("onboard")
-  .description("Add dripline instructions to CLAUDE.md or AGENTS.md")
-  .action(async (_opts, cmd) => {
-    const root = cmd.optsWithGlobals();
-    await onboard([], { json: root.json, quiet: root.quiet });
   });
 
 if (process.argv.length <= 2) {

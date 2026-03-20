@@ -52,7 +52,6 @@ SQL query → SQLite virtual table → sync generator → API call → yield row
 dripline                              # Interactive REPL
 dripline query "<sql>"                # Execute a query (alias: dripline q)
 dripline init                         # Create .dripline/ directory
-dripline onboard                      # Add instructions to CLAUDE.md
 dripline connection add <name>        # Add a connection (--plugin, --set key=val)
 dripline connection list              # List connections
 dripline connection remove <name>     # Remove a connection
@@ -189,7 +188,7 @@ Full config format:
 
 ## For Agents
 
-Every command supports `--json`. Run `dripline onboard` to add usage instructions to CLAUDE.md.
+Every command supports `--json`.
 
 ## Development
 

@@ -57,7 +57,7 @@ better-sqlite3's virtual table API requires **sync** generators. Plugins use `ex
 | Layer | File | Purpose |
 |-------|------|---------|
 | CLI | `src/main.ts` | Commander setup, routes to commands |
-| Commands | `src/commands/` | query, repl, init, onboard |
+| Commands | `src/commands/` | query, repl, init, connection, plugin |
 | Engine | `src/engine.ts` | Creates SQLite DB, registers virtual tables, runs queries |
 | Plugin SDK | `src/plugin/` | Types, registry, loader |
 | Plugins | `src/plugins/` | GitHub (and future plugins) |

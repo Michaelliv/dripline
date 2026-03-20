@@ -4,7 +4,6 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, realpa
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { init } from "../commands/init.js";
-import { onboard } from "../commands/onboard.js";
 
 let origCwd: string;
 let tmpDir: string;
@@ -64,51 +63,6 @@ describe("init command", () => {
     await init([], {});
     await init([], {}); // should not throw
     assert.ok(existsSync(join(tmpDir, ".dripline")));
-  });
-});
-
-describe("onboard command", () => {
-  beforeEach(() => setup());
-  afterEach(() => teardown());
-
-  it("creates CLAUDE.md with instructions", async () => {
-    await onboard([], {});
-    assert.ok(existsSync(join(tmpDir, "CLAUDE.md")));
-    const content = readFileSync(join(tmpDir, "CLAUDE.md"), "utf-8");
-    assert.ok(content.includes("<dripline>"));
-  });
-
-  it("appends to existing CLAUDE.md", async () => {
-    writeFileSync(join(tmpDir, "CLAUDE.md"), "# Existing\n");
-    await onboard([], {});
-    const content = readFileSync(join(tmpDir, "CLAUDE.md"), "utf-8");
-    assert.ok(content.includes("# Existing"));
-    assert.ok(content.includes("<dripline>"));
-  });
-
-  it("is idempotent", async () => {
-    await onboard([], {});
-    await onboard([], {});
-    const content = readFileSync(join(tmpDir, "CLAUDE.md"), "utf-8");
-    const count = content.split("<dripline>").length - 1;
-    assert.equal(count, 1);
-  });
-
-  it("prefers existing CLAUDE.md over AGENTS.md", async () => {
-    writeFileSync(join(tmpDir, "CLAUDE.md"), "# Claude\n");
-    writeFileSync(join(tmpDir, "AGENTS.md"), "# Agents\n");
-    await onboard([], {});
-    const claude = readFileSync(join(tmpDir, "CLAUDE.md"), "utf-8");
-    const agents = readFileSync(join(tmpDir, "AGENTS.md"), "utf-8");
-    assert.ok(claude.includes("<dripline>"));
-    assert.ok(!agents.includes("<dripline>"));
-  });
-
-  it("with --json outputs JSON", async () => {
-    const lines = await captureLog(() => onboard([], { json: true }));
-    const output = lines.join("\n");
-    const parsed = JSON.parse(output);
-    assert.equal(parsed.success, true);
   });
 });
 

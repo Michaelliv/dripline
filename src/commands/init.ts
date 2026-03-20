@@ -14,8 +14,8 @@ export async function init(
     json: () => ({ success: true, path: root }),
     human: () => {
       success(`Initialized .dripline/ in ${process.cwd()}`);
-      hint("Next: run the onboard command to teach your agent about dripline");
-      console.log(`  ${cmd("dripline onboard")}`);
+      hint("Next: add a connection");
+      console.log(`  ${cmd("dripline connection add gh --plugin github --prompt token")}`);
     },
   });
 }
