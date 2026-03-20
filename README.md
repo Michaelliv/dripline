@@ -11,130 +11,148 @@ npm install -g dripline
 ## Quick Start
 
 ```bash
-# Initialize a project
 dripline init
 
-# Query GitHub repos (works without config for public APIs)
 dripline query "SELECT name, stargazers_count, language
   FROM github_repos
   WHERE owner = 'torvalds'
   ORDER BY stargazers_count DESC
   LIMIT 10"
+```
 
-# Add auth for higher rate limits
+Add auth for higher rate limits:
+
+```bash
 echo '{"connections":[{"name":"gh","plugin":"github","config":{"token":"ghp_xxx"}}]}' > .dripline/config.json
+```
 
-# Start interactive shell
+Start the interactive shell:
+
+```bash
 dripline
+```
+
+## How It Works
+
+Plugins define tables backed by API calls. dripline registers them as SQLite virtual tables via `better-sqlite3`. You write SQL — SQLite handles filtering, joins, aggregation. Key columns (like `owner`, `repo`) are pushed down to the API as parameters.
+
+```
+SQL query → SQLite virtual table → sync generator → API call → yield rows
 ```
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `dripline` | Start interactive REPL |
-| `dripline query <sql>` | Execute a SQL query |
-| `dripline q <sql>` | Shorthand for query |
-| `dripline repl` | Start interactive REPL |
-| `dripline init` | Create `.dripline/` in current directory |
-| `dripline onboard` | Add dripline instructions to CLAUDE.md |
+```bash
+dripline                              # Interactive REPL
+dripline query "<sql>"                # Execute a query (alias: dripline q)
+dripline init                         # Create .dripline/ directory
+dripline onboard                      # Add instructions to CLAUDE.md
+dripline plugin list                  # List all plugins
+dripline plugin install <source>      # Install from npm/git/local
+dripline plugin remove <name>         # Uninstall a plugin
+```
 
-### Query Options
+### Query options
 
 | Flag | Description |
 |------|-------------|
-| `-o, --output <format>` | Output format: `table` (default), `json`, `csv`, `line` |
-| `--json` | Output as JSON (same as `-o json`) |
-| `-q, --quiet` | Suppress extra output |
+| `-o, --output <format>` | `table` (default), `json`, `csv`, `line` |
+| `--json` | Same as `-o json` |
+| `-q, --quiet` | Suppress timing output |
 
-### REPL Commands
+### REPL commands
 
 | Command | Description |
 |---------|-------------|
 | `.tables` | List all available tables |
-| `.inspect <table>` | Show table columns and key columns |
+| `.inspect <table>` | Show columns and key columns |
 | `.connections` | List configured connections |
 | `.output <format>` | Change output format |
-| `.cache clear` | Clear the query cache |
 | `.help` | Show help |
 | `.quit` | Exit |
 
 ## Plugins
 
-### GitHub
+### GitHub (built-in)
 
-Tables: `github_repos`, `github_issues`, `github_pull_requests`, `github_stargazers`
+| Table | Required WHERE | Description |
+|-------|---------------|-------------|
+| `github_repos` | `owner` | Repositories |
+| `github_issues` | `owner`, `repo` | Issues |
+| `github_pull_requests` | `owner`, `repo` | Pull requests |
+| `github_stargazers` | `owner`, `repo` | Stargazers |
 
 ```sql
--- Top repos by stars
-SELECT name, stargazers_count, language
-FROM github_repos WHERE owner = 'Michaelliv'
-ORDER BY stargazers_count DESC;
-
--- Open issues
-SELECT number, title, state
-FROM github_issues WHERE owner = 'Michaelliv' AND repo = 'napkin';
-
--- Join repos with their issues
-SELECT r.name, COUNT(i.id) as issue_count
+SELECT r.name, COUNT(i.id) as issues
 FROM github_repos r
 JOIN github_issues i ON r.name = i.repo
 WHERE r.owner = 'Michaelliv' AND i.owner = 'Michaelliv'
 GROUP BY r.name;
 ```
 
-## Writing a Plugin
+### Installing plugins
+
+```bash
+dripline plugin install npm:@dripline/aws
+dripline plugin install git:github.com/user/repo
+dripline plugin install ./my-plugin.ts
+```
+
+Plugins auto-discover from `.dripline/plugins/` (project) and `~/.dripline/plugins/` (global).
+
+### Writing a plugin
 
 ```typescript
 import type { DriplinePluginAPI } from "dripline";
-import { syncGetPaginated } from "dripline/plugins/utils/http";
 
 export default function(dl: DriplinePluginAPI) {
-  dl.setName("myplugin");
-  dl.setVersion("0.1.0");
+  dl.setName("my-api");
+  dl.setVersion("1.0.0");
   dl.setConnectionSchema({
-    api_key: { type: "string", required: true, description: "API key" },
+    token: { type: "string", required: true, description: "API token" },
   });
 
-  dl.registerTable("my_table", {
+  dl.registerTable("my_items", {
     columns: [
       { name: "id", type: "number" },
-      { name: "name", type: "string" },
+      { name: "title", type: "string" },
     ],
     keyColumns: [
-      { name: "org", required: "required" },
+      { name: "project", required: "required" },
     ],
     *list(ctx) {
-      const org = ctx.quals.find(q => q.column === "org")?.value;
-      if (!org) return;
-      const headers = { Authorization: `Bearer ${ctx.connection.config.api_key}` };
-      const data = syncGetPaginated(`https://api.example.com/${org}/items`, headers);
+      const project = ctx.quals.find(q => q.column === "project")?.value;
+      if (!project) return;
+      const headers = { Authorization: `Bearer ${ctx.connection.config.token}` };
+      const data = syncGetPaginated(`https://api.example.com/${project}/items`, headers);
       for (const item of data) {
-        yield { id: item.id, name: item.name };
+        yield { id: item.id, title: item.title };
       }
     },
   });
 }
 ```
 
-### Installing Plugins
+Plugins are sync generators — `list` yields rows, HTTP calls use `execFileSync("curl", ...)`. Key columns become hidden WHERE parameters pushed down to the API.
 
-```bash
-dripline plugin install npm:@dripline/aws       # from npm
-dripline plugin install git:github.com/user/repo # from git
-dripline plugin install ./my-plugin.ts           # local file
-dripline plugin list                             # show all plugins
-dripline plugin remove my-plugin                 # uninstall
+## SDK
+
+Use dripline as a library:
+
+```typescript
+import { Dripline, githubPlugin } from "dripline";
+
+const dl = new Dripline({
+  plugins: [githubPlugin],
+  connections: [{ name: "gh", plugin: "github", config: { token: "ghp_xxx" } }],
+});
+
+const repos = dl.query<{ name: string; stars: number }>(
+  "SELECT name, stargazers_count as stars FROM github_repos WHERE owner = 'torvalds' ORDER BY stars DESC LIMIT 5"
+);
+
+dl.close();
 ```
-
-Key concepts:
-- **Plugin function** receives `DriplinePluginAPI` — register tables, set config schema
-- **Columns** define what users can SELECT
-- **Key columns** become required/optional WHERE parameters — pushed down to the API
-- **`list`** is a sync generator that yields rows
-- **`get`** (optional) handles single-item lookups
-- HTTP calls use `execFileSync("curl", ...)` — sync is required by SQLite
-- Plugins auto-discovered from `.dripline/plugins/` (project) and `~/.dripline/plugins/` (global)
 
 ## Configuration
 
@@ -143,32 +161,25 @@ Key concepts:
 ```json
 {
   "connections": [
-    {
-      "name": "my_github",
-      "plugin": "github",
-      "config": { "token": "ghp_your_token_here" }
-    }
+    { "name": "gh", "plugin": "github", "config": { "token": "ghp_xxx" } }
   ],
-  "cache": {
-    "enabled": true,
-    "ttl": 300,
-    "maxSize": 1000
-  },
-  "rateLimits": {
-    "github": { "maxPerSecond": 5 }
-  }
+  "cache": { "enabled": true, "ttl": 300, "maxSize": 1000 },
+  "rateLimits": { "github": { "maxPerSecond": 5 } }
 }
 ```
 
 ## For Agents
 
-Every command supports `--json` for structured output:
+Every command supports `--json`. Run `dripline onboard` to add usage instructions to CLAUDE.md.
+
+## Development
 
 ```bash
-dripline query "SELECT name FROM github_repos WHERE owner = 'x'" --json
+npm install
+npm run dev -- query "SELECT 1"
+npm test
+npm run check
 ```
-
-Run `dripline onboard` to add usage instructions to your agent's context file.
 
 ## License
 
