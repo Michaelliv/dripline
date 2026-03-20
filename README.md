@@ -23,7 +23,7 @@ dripline query "SELECT name, stargazers_count, language
 Add auth for higher rate limits:
 
 ```bash
-dripline connection add gh --plugin github --set token=ghp_xxx
+dripline connection add gh --plugin github --prompt token
 ```
 
 Or use environment variables (no config needed):
@@ -168,7 +168,7 @@ dl.close();
 Connections are stored in `.dripline/config.json`. Manage them with the CLI:
 
 ```bash
-dripline connection add gh --plugin github --set token=ghp_xxx
+dripline connection add gh --plugin github --prompt token
 dripline connection list
 dripline connection remove gh
 ```

@@ -5,6 +5,7 @@ import { registry } from "../plugin/registry.js";
 import { formatTable } from "../utils/table-formatter.js";
 import { formatJson, formatCsv, formatLine } from "../utils/formatters.js";
 import { error } from "../utils/output.js";
+import { startSpinner } from "../utils/spinner.js";
 
 export type OutputFormat = "table" | "json" | "csv" | "line";
 
@@ -23,11 +24,13 @@ export async function query(
   });
 
   try {
+    const format = options.json ? "json" : options.output ?? "table";
+    const showSpinner = !options.json && !options.quiet && format !== "json";
+    const spinner = showSpinner ? startSpinner("Querying...") : null;
     const start = performance.now();
     const rows = dl.query(sql);
     const elapsed = ((performance.now() - start) / 1000).toFixed(3);
-
-    const format = options.json ? "json" : options.output ?? "table";
+    spinner?.stop();
 
     switch (format) {
       case "json":

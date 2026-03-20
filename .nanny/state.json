@@ -1,361 +1,136 @@
 {
   "version": 1,
-  "goal": "Remove AI slop from every source file",
+  "goal": "Fix CLI design issues",
   "maxAttempts": 3,
   "tasks": [
     {
       "id": 1,
-      "description": "Clean src/engine.ts — remove all narrating comments like '// Build column list for better-sqlite3', '// Key columns become hidden parameters', '// Filter out key columns...', '// Always add connection as a parameter', '// Map parameter values to key column quals', '// Connection parameter is last', '// Resolve connection', '// Check cache', '// Rate limit', '// Decide get vs list', '// Use get only when ALL key columns have quals', '// Hydrate if needed', '// Cache results', '// Release rate limiter', '// Yield rows, picking only declared columns', '// Configure rate limits', '// Register all tables from all plugins'. Keep the code exactly the same, just strip these comments.",
+      "description": "Fix help text — add examples, reorder commands, add GitHub URL.\n\nIn src/main.ts:\n1. Reorder commands: query first, then connection, plugin, repl, init, onboard\n2. Add examples to the program description or after help via Commander's addHelpText('after', ...)\n3. Add GitHub URL to help footer\n\nFor query subcommand: add example in description or addHelpText\nFor connection add: add example\n\nAlso fix the 'query with no sql' error — Commander shows 'missing required argument'. Override with addHelpText or use a custom action that checks for the arg and shows a useful message with example.",
       "check": {
-        "command": "npx tsx -e \"import { QueryEngine } from './src/engine.js'; console.log('ok')\" && ! grep -n '// Build column\\|// Key columns become\\|// Filter out key\\|// Always add connection\\|// Map parameter\\|// Connection parameter\\|// Resolve connection\\|// Check cache\\|// Rate limit\\|// Decide get\\|// Use get only\\|// Hydrate if\\|// Cache results\\|// Release rate\\|// Yield rows\\|// Configure rate\\|// Register all' src/engine.ts"
+        "command": "npx tsx src/main.ts --help 2>&1 | grep -q 'Example' && npx tsx src/main.ts --help 2>&1 | grep -q 'github'"
       },
       "status": "done",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-03-20T07:59:13.049Z",
-      "finishedAt": "2026-03-20T07:59:30.891Z",
+      "startedAt": "2026-03-20T08:33:59.209Z",
+      "finishedAt": "2026-03-20T08:34:36.936Z",
       "summary": "done"
     },
     {
       "id": 2,
-      "description": "Clean src/index.ts — remove all section header comments: '// ── SDK entrypoint ──', '// Import dripline as a library:', '//   import { Dripline } from \"dripline\";', '// Core engine', '// Plugin SDK — everything needed to write a plugin', '// Plugin API (for writing plugins)', '// Plugin installer', '// Config', '// Cache & Rate Limiter', '// Formatters', '// HTTP utilities for plugin authors', '// Built-in plugins'. Just keep the exports, no comments.",
+      "description": "Fix color handling — respect NO_COLOR, TERM=dumb, --no-color.\n\nchalk already respects NO_COLOR and TERM=dumb IF you use chalk's auto-detection. But we need to also:\n1. Add --no-color global flag in src/main.ts\n2. When --no-color is passed, set process.env.NO_COLOR = '1' early (before chalk initializes)\n\nVerify: NO_COLOR=1 npx tsx src/main.ts query 'SELECT 1' should show no ANSI escape codes.\nVerify: npx tsx src/main.ts --no-color query 'SELECT 1' should show no ANSI escape codes.",
       "check": {
-        "command": "npx tsx -e \"import { Dripline } from './src/index.js'; console.log('ok')\" && ! grep '// ' src/index.ts"
+        "command": "NO_COLOR=1 npx tsx src/main.ts query 'SELECT 1' 2>&1 | cat | grep -v $'\\x1b' | grep -q '1 row'"
       },
       "status": "done",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-03-20T07:59:30.926Z",
-      "finishedAt": "2026-03-20T07:59:39.633Z",
+      "startedAt": "2026-03-20T08:34:36.967Z",
+      "finishedAt": "2026-03-20T08:35:15.213Z",
       "summary": "done"
     },
     {
       "id": 3,
-      "description": "Clean src/commands/repl.ts — remove comments: '// Show key columns that aren't in columns list (parameters)', '// Access cache through engine — we'll need to expose it', '// Load history', '// Meta-commands', '// Save to history'.",
+      "description": "Fix secret input — connection add should prompt for sensitive values instead of --set.\n\nChange connection add to support:\n1. --set key=value for non-sensitive config (still works)\n2. --prompt key for sensitive values — reads from stdin with echo disabled\n3. --stdin to read a value from piped input: echo 'ghp_xxx' | dripline connection add gh --plugin github --stdin token\n\nUpdate src/commands/connection.ts:\n- Import readline from 'node:readline'\n- Add --prompt <key> option that uses readline with terminal: true and hides input\n- Add --stdin <key> option that reads from process.stdin\n- When stdin is not a TTY and --set has sensitive-looking keys (token, key, secret, password), warn to stderr\n\nUpdate the README quick start to use the new pattern:\n  dripline connection add gh --plugin github --prompt token\n  # or\n  echo 'ghp_xxx' | dripline connection add gh --plugin github --stdin token",
       "check": {
-        "command": "! grep -n '// Show key\\|// Access cache\\|// Load history\\|// Meta-commands\\|// Save to history' src/commands/repl.ts"
+        "command": "echo 'test_token' | npx tsx src/main.ts connection add testconn --plugin testplug --stdin token --json 2>&1 | grep -q 'success' && npx tsx src/main.ts connection remove testconn --json 2>/dev/null"
       },
       "status": "done",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-03-20T07:59:39.664Z",
-      "finishedAt": "2026-03-20T07:59:47.154Z",
+      "startedAt": "2026-03-20T08:35:15.244Z",
+      "finishedAt": "2026-03-20T08:37:05.994Z",
       "summary": "done"
     },
     {
       "id": 4,
-      "description": "Clean src/plugin/installer.ts — remove comments: '// npm:@scope/pkg@version or npm:pkg', '// Handle @scope/pkg@version', '// Scoped: @scope/pkg@version', '// git:github.com/user/repo@ref or https://...', '// Normalize to https URL', '// Local path', '// Register in plugins.json', '// Remove files for npm/git installs'.",
+      "description": "Add progress indicator for API calls.\n\nThe issue: when a query hits a real API, the CLI hangs silently for seconds. Users think it's broken.\n\nAdd a spinner to stderr when stdout is a TTY and --quiet is not set.\n\nCreate src/utils/spinner.ts:\n- startSpinner(message: string): { stop: (finalMessage?: string) => void }\n- Uses process.stderr.write with \\r to overwrite the line\n- Frames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']\n- Only starts if stderr is a TTY\n- stop() clears the spinner line\n\nIntegrate in src/commands/query.ts:\n- Start spinner before engine.query()\n- Stop spinner after results are returned\n- Don't show spinner in --json or --quiet mode\n\nIntegrate in src/commands/repl.ts:\n- Same pattern for each query execution",
       "check": {
-        "command": "npx tsx -e \"import { parsePluginSource } from './src/plugin/installer.js'; console.log('ok')\" && ! grep '// npm:\\|// Handle @scope\\|// Scoped:\\|// git:github\\|// Normalize to\\|// Local path\\|// Register in\\|// Remove files' src/plugin/installer.ts"
+        "command": "npx tsx -e \"import { startSpinner } from './src/utils/spinner.js'; const s = startSpinner('test'); setTimeout(() => { s.stop(); console.log('ok'); }, 100);\" 2>&1 | grep -q ok"
       },
       "status": "done",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-03-20T07:59:47.184Z",
-      "finishedAt": "2026-03-20T07:59:58.292Z",
+      "startedAt": "2026-03-20T08:37:06.025Z",
+      "finishedAt": "2026-03-20T08:38:00.421Z",
       "summary": "done"
     },
     {
       "id": 5,
-      "description": "Clean src/plugin/loader.ts — remove comments: '// skip invalid plugins', '// skip invalid', '// Check for index.ts/index.js', '// Check for package.json with dripline.plugins', '// skip', '// skip malformed', '// 1. Built-in plugins', '// 2. Project-local: .dripline/plugins/', '// Also load from plugins.json', '// 3. Global: ~/.dripline/plugins/'.",
-      "check": {
-        "command": "! grep -n '// skip\\|// Check for\\|// 1\\. Built\\|// 2\\. Project\\|// Also load\\|// 3\\. Global' src/plugin/loader.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T07:59:58.325Z",
-      "finishedAt": "2026-03-20T08:00:10.010Z",
-      "summary": "done"
-    },
-    {
-      "id": 6,
-      "description": "Clean src/plugin/api.ts — remove JSDoc comments '/** Check if a value is a PluginFunction (vs a static PluginDef) */' and '/** Resolve a plugin export (function or static) to a PluginDef */'.",
-      "check": {
-        "command": "! grep '/\\*\\*' src/plugin/api.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:00:10.041Z",
-      "finishedAt": "2026-03-20T08:00:18.852Z",
-      "summary": "done"
-    },
-    {
-      "id": 7,
-      "description": "Clean src/plugins/utils/http.ts — remove comments: '// Response has: headers\\r\\n\\r\\nbody\\nstatus_code', '// Parse response headers', '// Last line is status code', '// Parse Link header for next page'.",
-      "check": {
-        "command": "! grep '// Response has\\|// Parse response\\|// Last line\\|// Parse Link' src/plugins/utils/http.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:00:18.887Z",
-      "finishedAt": "2026-03-20T08:00:29.732Z",
-      "summary": "done"
-    },
-    {
-      "id": 8,
-      "description": "Clean src/rate-limiter.ts — remove comments: '// Busy-wait for sync context (virtual table generators are sync)', '// spin', '// busy wait'.",
-      "check": {
-        "command": "! grep '// Busy-wait\\|// spin\\|// busy wait' src/rate-limiter.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:00:29.763Z",
-      "finishedAt": "2026-03-20T08:00:37.700Z",
-      "summary": "done"
-    },
-    {
-      "id": 9,
-      "description": "Clean src/sdk.ts — remove the large JSDoc block (/** ... Dripline SDK — query cloud APIs using SQL ... @example ... */), remove inline comments: '// Re-create engine to pick up the new plugin's tables', '// cache is enabled if it exists'. Keep the short /** method docs */ on public methods.",
-      "check": {
-        "command": "! grep 'Re-create engine\\|cache is enabled if\\|query cloud APIs using SQL' src/sdk.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:00:37.731Z",
-      "finishedAt": "2026-03-20T08:00:57.041Z",
-      "summary": "done"
-    },
-    {
-      "id": 10,
-      "description": "Clean src/utils/table-formatter.ts — remove comments: '// Calculate column widths', '// Cap widths to fit terminal', '// │ between each + edges', '// 1 space each side', '// Top border', '// Header', '// Header separator', '// Data rows', '// Bottom border'.",
-      "check": {
-        "command": "! grep '// Calculate column\\|// Cap widths\\|// │ between\\|// 1 space\\|// Top border\\|// Header$\\|// Header sep\\|// Data rows\\|// Bottom border' src/utils/table-formatter.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:00:57.072Z",
-      "finishedAt": "2026-03-20T08:01:06.403Z",
-      "summary": "done"
-    },
-    {
-      "id": 11,
-      "description": "Clean src/utils/exit-codes.ts — remove inline comments '// Invalid input, missing args' and '// Data directory not found'.",
-      "check": {
-        "command": "! grep '// Invalid\\|// Data directory' src/utils/exit-codes.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:01:06.433Z",
-      "finishedAt": "2026-03-20T08:01:13.840Z",
-      "summary": "done"
-    },
-    {
-      "id": 12,
-      "description": "Clean src/main.ts — remove comment '// Default to REPL when no command given'.",
-      "check": {
-        "command": "! grep '// Default to' src/main.ts"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:01:13.872Z",
-      "finishedAt": "2026-03-20T08:01:21.242Z",
-      "summary": "done"
-    },
-    {
-      "id": 13,
-      "description": "Clean README.md — remove 'A lightweight Steampipe alternative built on SQLite virtual tables. No PostgreSQL, no FDW, no heavyweight dependencies', remove 'Plugins use a function-based API inspired by pi\\'s extensions:', remove the entire '## vs Steampipe' comparison table section. Keep the rest.",
-      "check": {
-        "command": "! grep -i 'steampipe\\|inspired by pi' README.md"
-      },
-      "status": "done",
-      "attempts": 1,
-      "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:01:21.276Z",
-      "finishedAt": "2026-03-20T08:01:50.571Z",
-      "summary": "done"
-    },
-    {
-      "id": 14,
-      "description": "Final pass — run all tests to make sure nothing broke.",
+      "description": "Run all tests to make sure nothing broke.",
       "check": {
         "command": "npm test 2>&1 | tail -5"
       },
       "status": "done",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-03-20T08:01:50.601Z",
-      "finishedAt": "2026-03-20T08:02:24.469Z",
-      "summary": "212 tests pass"
+      "startedAt": "2026-03-20T08:38:00.453Z",
+      "finishedAt": "2026-03-20T08:38:20.532Z",
+      "summary": "228 tests pass"
     }
   ],
   "log": [
     {
-      "timestamp": "2026-03-20T07:59:13.049Z",
+      "timestamp": "2026-03-20T08:33:59.209Z",
       "taskId": 1,
       "event": "start",
-      "message": "Attempt 1/3: Clean src/engine.ts — remove all narrating comments like '// Build column list for better-sqlite3', '// Key columns become hidden parameters', '// Filter out key columns...', '// Always add connection as a parameter', '// Map parameter values to key column quals', '// Connection parameter is last', '// Resolve connection', '// Check cache', '// Rate limit', '// Decide get vs list', '// Use get only when ALL key columns have quals', '// Hydrate if needed', '// Cache results', '// Release rate limiter', '// Yield rows, picking only declared columns', '// Configure rate limits', '// Register all tables from all plugins'. Keep the code exactly the same, just strip these comments."
+      "message": "Attempt 1/3: Fix help text — add examples, reorder commands, add GitHub URL.\n\nIn src/main.ts:\n1. Reorder commands: query first, then connection, plugin, repl, init, onboard\n2. Add examples to the program description or after help via Commander's addHelpText('after', ...)\n3. Add GitHub URL to help footer\n\nFor query subcommand: add example in description or addHelpText\nFor connection add: add example\n\nAlso fix the 'query with no sql' error — Commander shows 'missing required argument'. Override with addHelpText or use a custom action that checks for the arg and shows a useful message with example."
     },
     {
-      "timestamp": "2026-03-20T07:59:30.891Z",
+      "timestamp": "2026-03-20T08:34:36.936Z",
       "taskId": 1,
       "event": "done",
       "message": "done"
     },
     {
-      "timestamp": "2026-03-20T07:59:30.926Z",
+      "timestamp": "2026-03-20T08:34:36.967Z",
       "taskId": 2,
       "event": "start",
-      "message": "Attempt 1/3: Clean src/index.ts — remove all section header comments: '// ── SDK entrypoint ──', '// Import dripline as a library:', '//   import { Dripline } from \"dripline\";', '// Core engine', '// Plugin SDK — everything needed to write a plugin', '// Plugin API (for writing plugins)', '// Plugin installer', '// Config', '// Cache & Rate Limiter', '// Formatters', '// HTTP utilities for plugin authors', '// Built-in plugins'. Just keep the exports, no comments."
+      "message": "Attempt 1/3: Fix color handling — respect NO_COLOR, TERM=dumb, --no-color.\n\nchalk already respects NO_COLOR and TERM=dumb IF you use chalk's auto-detection. But we need to also:\n1. Add --no-color global flag in src/main.ts\n2. When --no-color is passed, set process.env.NO_COLOR = '1' early (before chalk initializes)\n\nVerify: NO_COLOR=1 npx tsx src/main.ts query 'SELECT 1' should show no ANSI escape codes.\nVerify: npx tsx src/main.ts --no-color query 'SELECT 1' should show no ANSI escape codes."
     },
     {
-      "timestamp": "2026-03-20T07:59:39.633Z",
+      "timestamp": "2026-03-20T08:35:15.213Z",
       "taskId": 2,
       "event": "done",
       "message": "done"
     },
     {
-      "timestamp": "2026-03-20T07:59:39.664Z",
+      "timestamp": "2026-03-20T08:35:15.244Z",
       "taskId": 3,
       "event": "start",
-      "message": "Attempt 1/3: Clean src/commands/repl.ts — remove comments: '// Show key columns that aren't in columns list (parameters)', '// Access cache through engine — we'll need to expose it', '// Load history', '// Meta-commands', '// Save to history'."
+      "message": "Attempt 1/3: Fix secret input — connection add should prompt for sensitive values instead of --set.\n\nChange connection add to support:\n1. --set key=value for non-sensitive config (still works)\n2. --prompt key for sensitive values — reads from stdin with echo disabled\n3. --stdin to read a value from piped input: echo 'ghp_xxx' | dripline connection add gh --plugin github --stdin token\n\nUpdate src/commands/connection.ts:\n- Import readline from 'node:readline'\n- Add --prompt <key> option that uses readline with terminal: true and hides input\n- Add --stdin <key> option that reads from process.stdin\n- When stdin is not a TTY and --set has sensitive-looking keys (token, key, secret, password), warn to stderr\n\nUpdate the README quick start to use the new pattern:\n  dripline connection add gh --plugin github --prompt token\n  # or\n  echo 'ghp_xxx' | dripline connection add gh --plugin github --stdin token"
     },
     {
-      "timestamp": "2026-03-20T07:59:47.154Z",
+      "timestamp": "2026-03-20T08:37:05.994Z",
       "taskId": 3,
       "event": "done",
       "message": "done"
     },
     {
-      "timestamp": "2026-03-20T07:59:47.184Z",
+      "timestamp": "2026-03-20T08:37:06.025Z",
       "taskId": 4,
       "event": "start",
-      "message": "Attempt 1/3: Clean src/plugin/installer.ts — remove comments: '// npm:@scope/pkg@version or npm:pkg', '// Handle @scope/pkg@version', '// Scoped: @scope/pkg@version', '// git:github.com/user/repo@ref or https://...', '// Normalize to https URL', '// Local path', '// Register in plugins.json', '// Remove files for npm/git installs'."
+      "message": "Attempt 1/3: Add progress indicator for API calls.\n\nThe issue: when a query hits a real API, the CLI hangs silently for seconds. Users think it's broken.\n\nAdd a spinner to stderr when stdout is a TTY and --quiet is not set.\n\nCreate src/utils/spinner.ts:\n- startSpinner(message: string): { stop: (finalMessage?: string) => void }\n- Uses process.stderr.write with \\r to overwrite the line\n- Frames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']\n- Only starts if stderr is a TTY\n- stop() clears the spinner line\n\nIntegrate in src/commands/query.ts:\n- Start spinner before engine.query()\n- Stop spinner after results are returned\n- Don't show spinner in --json or --quiet mode\n\nIntegrate in src/commands/repl.ts:\n- Same pattern for each query execution"
     },
     {
-      "timestamp": "2026-03-20T07:59:58.292Z",
+      "timestamp": "2026-03-20T08:38:00.421Z",
       "taskId": 4,
       "event": "done",
       "message": "done"
     },
     {
-      "timestamp": "2026-03-20T07:59:58.325Z",
+      "timestamp": "2026-03-20T08:38:00.453Z",
       "taskId": 5,
       "event": "start",
-      "message": "Attempt 1/3: Clean src/plugin/loader.ts — remove comments: '// skip invalid plugins', '// skip invalid', '// Check for index.ts/index.js', '// Check for package.json with dripline.plugins', '// skip', '// skip malformed', '// 1. Built-in plugins', '// 2. Project-local: .dripline/plugins/', '// Also load from plugins.json', '// 3. Global: ~/.dripline/plugins/'."
+      "message": "Attempt 1/3: Run all tests to make sure nothing broke."
     },
     {
-      "timestamp": "2026-03-20T08:00:10.010Z",
+      "timestamp": "2026-03-20T08:38:20.532Z",
       "taskId": 5,
       "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:00:10.041Z",
-      "taskId": 6,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/plugin/api.ts — remove JSDoc comments '/** Check if a value is a PluginFunction (vs a static PluginDef) */' and '/** Resolve a plugin export (function or static) to a PluginDef */'."
-    },
-    {
-      "timestamp": "2026-03-20T08:00:18.852Z",
-      "taskId": 6,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:00:18.887Z",
-      "taskId": 7,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/plugins/utils/http.ts — remove comments: '// Response has: headers\\r\\n\\r\\nbody\\nstatus_code', '// Parse response headers', '// Last line is status code', '// Parse Link header for next page'."
-    },
-    {
-      "timestamp": "2026-03-20T08:00:29.732Z",
-      "taskId": 7,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:00:29.763Z",
-      "taskId": 8,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/rate-limiter.ts — remove comments: '// Busy-wait for sync context (virtual table generators are sync)', '// spin', '// busy wait'."
-    },
-    {
-      "timestamp": "2026-03-20T08:00:37.700Z",
-      "taskId": 8,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:00:37.731Z",
-      "taskId": 9,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/sdk.ts — remove the large JSDoc block (/** ... Dripline SDK — query cloud APIs using SQL ... @example ... */), remove inline comments: '// Re-create engine to pick up the new plugin's tables', '// cache is enabled if it exists'. Keep the short /** method docs */ on public methods."
-    },
-    {
-      "timestamp": "2026-03-20T08:00:57.041Z",
-      "taskId": 9,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:00:57.072Z",
-      "taskId": 10,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/utils/table-formatter.ts — remove comments: '// Calculate column widths', '// Cap widths to fit terminal', '// │ between each + edges', '// 1 space each side', '// Top border', '// Header', '// Header separator', '// Data rows', '// Bottom border'."
-    },
-    {
-      "timestamp": "2026-03-20T08:01:06.403Z",
-      "taskId": 10,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:01:06.433Z",
-      "taskId": 11,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/utils/exit-codes.ts — remove inline comments '// Invalid input, missing args' and '// Data directory not found'."
-    },
-    {
-      "timestamp": "2026-03-20T08:01:13.840Z",
-      "taskId": 11,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:01:13.872Z",
-      "taskId": 12,
-      "event": "start",
-      "message": "Attempt 1/3: Clean src/main.ts — remove comment '// Default to REPL when no command given'."
-    },
-    {
-      "timestamp": "2026-03-20T08:01:21.243Z",
-      "taskId": 12,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:01:21.276Z",
-      "taskId": 13,
-      "event": "start",
-      "message": "Attempt 1/3: Clean README.md — remove 'A lightweight Steampipe alternative built on SQLite virtual tables. No PostgreSQL, no FDW, no heavyweight dependencies', remove 'Plugins use a function-based API inspired by pi\\'s extensions:', remove the entire '## vs Steampipe' comparison table section. Keep the rest."
-    },
-    {
-      "timestamp": "2026-03-20T08:01:50.571Z",
-      "taskId": 13,
-      "event": "done",
-      "message": "done"
-    },
-    {
-      "timestamp": "2026-03-20T08:01:50.601Z",
-      "taskId": 14,
-      "event": "start",
-      "message": "Attempt 1/3: Final pass — run all tests to make sure nothing broke."
-    },
-    {
-      "timestamp": "2026-03-20T08:02:24.469Z",
-      "taskId": 14,
-      "event": "done",
-      "message": "212 tests pass"
+      "message": "228 tests pass"
     }
   ],
-  "createdAt": "2026-03-20T07:58:23.437Z",
-  "updatedAt": "2026-03-20T08:02:24.469Z"
+  "createdAt": "2026-03-20T08:33:26.791Z",
+  "updatedAt": "2026-03-20T08:38:20.532Z"
 }

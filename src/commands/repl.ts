@@ -9,6 +9,7 @@ import { registry } from "../plugin/registry.js";
 import { formatTable } from "../utils/table-formatter.js";
 import { formatJson, formatCsv, formatLine } from "../utils/formatters.js";
 import type { OutputFormat } from "./query.js";
+import { startSpinner } from "../utils/spinner.js";
 
 let outputFormat: OutputFormat = "table";
 let dl: Dripline;
@@ -137,9 +138,11 @@ function handleMeta(line: string): boolean {
 
 function executeQuery(sql: string): void {
   try {
+    const spinner = startSpinner("Querying...");
     const start = performance.now();
     const rows = dl.query(sql);
     const elapsed = ((performance.now() - start) / 1000).toFixed(3);
+    spinner.stop();
 
     switch (outputFormat) {
       case "json":
