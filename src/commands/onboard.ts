@@ -5,19 +5,26 @@ import { output, success } from "../utils/output.js";
 
 const INSTRUCTIONS = `
 <dripline>
-Use \`dripline\` to query cloud APIs using SQL. Data is stored in \`.dripline/\` as JSON files, tracked by git.
+Use \`dripline\` to query cloud APIs using SQL. Config lives in \`.dripline/config.json\`.
 
 <commands>
-- \`dripline init\` - Initialize a dripline project
-- \`dripline query <sql>\` - Run a SQL query against cloud APIs
-- \`dripline plugin install <name>\` - Install a plugin
-- \`dripline plugin list\` - List installed plugins
-- \`dripline connection add <plugin> <name>\` - Add a connection
+- \`dripline query "<sql>"\` - Run a SQL query (alias: \`dripline q\`)
+- \`dripline\` or \`dripline repl\` - Interactive SQL shell
+- \`dripline init\` - Initialize .dripline/ directory
+- \`dripline onboard\` - Add these instructions to CLAUDE.md
 </commands>
+
+<tables>
+- \`github_repos\` - WHERE owner = 'x' (required)
+- \`github_issues\` - WHERE owner = 'x' AND repo = 'y' (required)
+- \`github_pull_requests\` - WHERE owner = 'x' AND repo = 'y' (required)
+- \`github_stargazers\` - WHERE owner = 'x' AND repo = 'y' (required)
+</tables>
 
 <rules>
 - ALWAYS use \`--json\` flag to get structured output for parsing
-- All data lives in \`.dripline/\` and should be committed to git
+- Key columns (owner, repo) are required WHERE clauses — queries without them return empty
+- Config: \`.dripline/config.json\` for API tokens and rate limits
 </rules>
 </dripline>
 `.trim();

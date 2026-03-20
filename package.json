@@ -7,19 +7,18 @@
   "bin": {
     "dripline": "./dist/main.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "dev": "bun run src/main.ts",
-    "build:bun": "bun build --compile src/main.ts --outfile dripline",
-    "build:bun-linux": "bun build --compile --target=bun-linux-x64 src/main.ts --outfile dripline-linux-x64",
-    "build:bun-mac-arm": "bun build --compile --target=bun-darwin-arm64 src/main.ts --outfile dripline-darwin-arm64",
-    "build:bun-mac-x64": "bun build --compile --target=bun-darwin-x64 src/main.ts --outfile dripline-darwin-x64",
-    "test": "bun test",
-    "format": "bunx biome format --write src/",
-    "lint": "bunx biome lint src/",
-    "check": "bunx biome check src/"
+    "dev": "npx tsx src/main.ts",
+    "test": "npx tsx --test src/tests/**/*.test.ts",
+    "smoke": "npx tsx smoke.ts",
+    "format": "npx @biomejs/biome format --write src/",
+    "lint": "npx @biomejs/biome lint src/",
+    "check": "npx @biomejs/biome check src/"
   },
   "repository": {
     "type": "git",
@@ -29,13 +28,23 @@
   "bugs": {
     "url": "https://github.com/Michaelliv/dripline/issues"
   },
-  "keywords": ["sql", "cloud", "api", "query", "steampipe", "cli"],
+  "keywords": [
+    "sql",
+    "cloud",
+    "api",
+    "query",
+    "steampipe",
+    "cli"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.0"
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "nanoid": "^5.1.6"

@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "goal": "Build dripline — a Steampipe clone using better-sqlite3 virtual tables. Implement: plugin system, connection config, pagination, caching, rate limiting, get vs list, REPL, output formats, and plugin install system.",
+  "maxAttempts": 3,
+  "tasks": [
+    {
+      "id": 1,
+      "description": "Create the plugin SDK types and interfaces in src/plugin/types.ts. This is the foundation everything else builds on.\n\nDefine these interfaces:\n\n1. `ColumnDef` — { name: string, type: 'string' | 'number' | 'boolean' | 'json' | 'datetime', description?: string }\n2. `KeyColumn` — { name: string, operators: string[] (default ['=']), required: 'required' | 'optional' | 'any_of' }\n3. `HydrateFunc` — (ctx: QueryContext, row: Record<string, any>) => Promise<Record<string, any>>\n4. `ListFunc` — (ctx: QueryContext) => AsyncGenerator<Record<string, any>>\n5. `GetFunc` — (ctx: QueryContext) => Promise<Record<string, any> | null>\n6. `TableDef` — { name: string, columns: ColumnDef[], keyColumns?: KeyColumn[], list: ListFunc, get?: GetFunc, hydrate?: { [columnName: string]: HydrateFunc }, description?: string }\n7. `PluginDef` — { name: string, version: string, tables: TableDef[], connectionConfigSchema?: Record<string, { type: string, required?: boolean, description?: string, default?: any }> }\n8. `QueryContext` — { connection: ConnectionConfig, quals: Qual[], columns: string[], limit?: number }\n9. `Qual` — { column: string, operator: string, value: any }\n10. `ConnectionConfig` — { name: string, plugin: string, config: Record<string, any> }\n11. `CacheEntry<T>` — { data: T[], timestamp: number, ttl: number }\n12. `RateLimitConfig` — { maxPerSecond?: number, maxPerMinute?: number, maxConcurrent?: number }\n\nAlso create src/plugin/index.ts that re-exports everything.\n\nUpdate src/types.ts to import and re-export from src/plugin/types.ts for backward compat.",
+      "check": {
+        "command": "npx tsx -e \"import { ColumnDef, TableDef, PluginDef, QueryContext, Qual } from './src/plugin/types.js'; console.log('types ok')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:15:07.255Z",
+      "finishedAt": "2026-03-20T07:15:31.775Z",
+      "summary": "Created plugin SDK types in src/plugin/types.ts with all 12 interfaces. Created src/plugin/index.ts re-export. Updated src/types.ts for backward compat."
+    },
+    {
+      "id": 2,
+      "description": "Create the plugin registry in src/plugin/registry.ts. This manages loading and registering plugins.\n\nImplement class `PluginRegistry`:\n- `private plugins: Map<string, PluginDef>` — registered plugins\n- `register(plugin: PluginDef): void` — add a plugin to the registry\n- `getPlugin(name: string): PluginDef | undefined`\n- `getTable(pluginName: string, tableName: string): TableDef | undefined`\n- `getAllTables(): Array<{ plugin: string, table: TableDef }>` — flat list of all tables across all plugins\n- `listPlugins(): PluginDef[]`\n\nExport a singleton `registry` instance.\n\nAlso create src/plugin/loader.ts:\n- `loadPluginFromPath(path: string): Promise<PluginDef>` — dynamic import of a plugin file, expects default export of PluginDef\n- `loadBuiltinPlugins(): Promise<void>` — loads all .ts/.js files from src/plugins/ dir, registers each\n- `loadPluginsFromConfig(configDir: string): Promise<void>` — reads .dripline/plugins.json for external plugin paths\n\nUpdate src/plugin/index.ts to export registry and loader.",
+      "check": {
+        "command": "npx tsx -e \"import { registry } from './src/plugin/registry.js'; console.log('registry ok')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:15:35.243Z",
+      "finishedAt": "2026-03-20T07:16:02.156Z",
+      "summary": "Created registry and loader"
+    },
+    {
+      "id": 3,
+      "description": "Create the connection config system in src/config/. This manages how users configure API credentials and plugin settings.\n\nCreate src/config/types.ts:\n- `DriplineConfig` — { connections: ConnectionConfig[], defaultConnection?: string, cache?: { enabled: boolean, ttl: number, maxSize: number }, rateLimits?: Record<string, RateLimitConfig> }\n\nCreate src/config/loader.ts:\n- `findConfigDir(): string | null` — walk up from cwd looking for .dripline/\n- `loadConfig(): DriplineConfig` — reads .dripline/config.json, merges with defaults\n- `saveConfig(config: DriplineConfig): void` — writes .dripline/config.json\n- `getConnection(name: string): ConnectionConfig | undefined` — look up a connection by name\n- `addConnection(conn: ConnectionConfig): void` — add/update a connection in config\n- `removeConnection(name: string): boolean` — remove a connection\n\nDefaults:\n- cache.enabled = true, cache.ttl = 300 (seconds), cache.maxSize = 1000 (entries)\n- connections = []\n\nCreate src/config/index.ts re-exporting everything.\n\nThe config file format (.dripline/config.json):\n```json\n{\n  \"connections\": [\n    { \"name\": \"my_github\", \"plugin\": \"github\", \"config\": { \"token\": \"ghp_xxx\" } }\n  ],\n  \"cache\": { \"enabled\": true, \"ttl\": 300 },\n  \"rateLimits\": { \"github\": { \"maxPerSecond\": 5 } }\n}\n```",
+      "check": {
+        "command": "npx tsx -e \"import { loadConfig, findConfigDir } from './src/config/loader.js'; console.log('config ok')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:16:04.875Z",
+      "finishedAt": "2026-03-20T07:16:44.426Z",
+      "summary": "Created config system"
+    },
+    {
+      "id": 4,
+      "description": "Create the caching layer in src/cache.ts. This prevents redundant API calls, especially critical for JOINs and subqueries that scan the same table multiple times.\n\nImplement class `QueryCache`:\n- `private cache: Map<string, CacheEntry<any>>` — in-memory cache\n- `private maxSize: number` — max entries, evict oldest when exceeded\n- `private defaultTtl: number` — default TTL in seconds\n- `private enabled: boolean`\n\nMethods:\n- `constructor(opts: { enabled?: boolean, ttl?: number, maxSize?: number })`\n- `getCacheKey(tableName: string, quals: Qual[], columns: string[]): string` — deterministic key from table + quals + columns. Sort quals and columns before hashing. Use JSON.stringify for simplicity.\n- `get<T>(key: string): T[] | null` — return cached data if not expired, null otherwise\n- `set<T>(key: string, data: T[], ttl?: number): void` — store with timestamp. If over maxSize, evict oldest entry.\n- `invalidate(tableName?: string): void` — clear entries for a table, or all if no table given\n- `clear(): void` — clear everything\n- `stats(): { size: number, hits: number, misses: number }` — basic stats\n\nTrack hits/misses with private counters.\n\nExport a singleton `queryCache` initialized with defaults, and a `configureCache(opts)` function to reconfigure it.",
+      "check": {
+        "command": "npx tsx -e \"import { queryCache, configureCache } from './src/cache.js'; queryCache.set('test', [{a:1}]); console.log(queryCache.get('test')); queryCache.clear(); console.log('cache ok')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:16:44.456Z",
+      "finishedAt": "2026-03-20T07:17:04.167Z",
+      "summary": "Created cache"
+    },
+    {
+      "id": 5,
+      "description": "Create the rate limiter in src/rate-limiter.ts. This prevents API abuse and respects provider rate limits.\n\nImplement class `RateLimiter`:\n- Uses a token bucket algorithm\n- `private buckets: Map<string, TokenBucket>` — per-scope buckets\n\nTokenBucket type:\n- `tokens: number` — current tokens\n- `maxTokens: number` — bucket capacity\n- `refillRate: number` — tokens added per second\n- `lastRefill: number` — timestamp of last refill\n- `queue: Array<{ resolve: () => void }>` — waiting requests\n\nMethods:\n- `constructor()`\n- `configure(scope: string, config: RateLimitConfig): void` — set up a bucket for a scope (plugin name, connection name, etc.). maxPerSecond maps to refillRate and maxTokens.\n- `async acquire(scope: string): Promise<void>` — take a token. If none available, wait until one is refilled. If no bucket exists for scope, pass through immediately (no limit).\n- `release(scope: string): void` — for concurrency limiting, release a slot\n- `private refill(bucket: TokenBucket): void` — add tokens based on elapsed time\n\nExport singleton `rateLimiter`.\n\nHandle maxConcurrent from RateLimitConfig by using a separate semaphore counter on the bucket.",
+      "check": {
+        "command": "npx tsx -e \"import { rateLimiter } from './src/rate-limiter.js'; rateLimiter.configure('test', { maxPerSecond: 10 }); rateLimiter.acquire('test').then(() => console.log('rate limiter ok'))\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:17:04.198Z",
+      "finishedAt": "2026-03-20T07:17:36.030Z",
+      "summary": "Created rate limiter with token bucket + sync acquire for virtual table context"
+    },
+    {
+      "id": 6,
+      "description": "Create the query engine in src/engine.ts. This is the core — it creates the SQLite database, registers virtual tables from plugins, handles caching, rate limiting, pagination, and get-vs-list routing.\n\nImplement class `QueryEngine`:\n- `private db: Database` — better-sqlite3 instance (in-memory)\n- `private registry: PluginRegistry`\n- `private cache: QueryCache`\n- `private rateLimiter: RateLimiter`\n\nMethods:\n- `constructor(registry: PluginRegistry, cache: QueryCache, rateLimiter: RateLimiter)`\n- `initialize(config: DriplineConfig): void` — for each plugin in registry, for each table, call `registerTable()`\n- `private registerTable(pluginName: string, table: TableDef, connections: ConnectionConfig[]): void` — uses `db.table()` from better-sqlite3 to create a virtual table. The generator function should:\n  1. Build QueryContext from the parameters (connection name passed as hidden param)\n  2. Check cache — if hit, yield cached rows and return\n  3. Decide get vs list: if all required key columns have '=' quals in parameters, and table has a get function, use get. Otherwise use list.\n  4. Acquire rate limiter token for the plugin scope\n  5. Call the plugin's list/get function\n  6. For list: iterate the async generator. Handle pagination internally — the plugin's list function is expected to handle pagination itself (yielding all pages).\n  7. For each row: if table has hydrate functions AND the requested columns need them, call hydrate functions to enrich the row\n  8. Cache the results\n  9. Yield each row\n- `query(sql: string, params?: any[]): any[]` — execute SQL against the db, return rows\n- `close(): void` — close the db\n\nKey challenge: better-sqlite3's `db.table()` generator is synchronous. But API calls are async. Solution: use `child_process.execFileSync` or `Bun.spawnSync` to run an async fetch in a sync context, OR pre-fetch data in a sync wrapper using `execSync` calling back into node. Actually, the simpler approach: better-sqlite3 virtual table generators CAN be sync generators. So the plugin list/get functions need to be SYNC, not async. Update the types accordingly — ListFunc becomes `(ctx: QueryContext) => Generator<Record<string, any>>` (sync generator). The plugin implementations will use synchronous HTTP calls (e.g., execSync curl, or synchronous-fetch libraries).\n\nWait — re-evaluate this. The smoke test already proved sync generators work with execSync curl. But that's ugly. A cleaner approach: fetch all data synchronously into an array first, then yield from the array. The plugin's list function can internally use execSync or child_process.spawnSync to make HTTP calls.\n\nRegister the connection name as a hidden `parameters` column so users write `WHERE connection = 'my_github'`. If there's only one connection for a plugin, make it the default.\n\nExport `createEngine(config: DriplineConfig): QueryEngine`.",
+      "check": {
+        "command": "npx tsx -e \"import { QueryEngine } from './src/engine.js'; console.log('engine ok')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:17:36.060Z",
+      "finishedAt": "2026-03-20T07:18:57.448Z",
+      "summary": "Created query engine with virtual table registration, cache, rate limiting, get-vs-list routing. Fixed column yield bug."
+    },
+    {
+      "id": 7,
+      "description": "Create a GitHub plugin as the first real plugin in src/plugins/github.ts. This proves the full stack works end-to-end.\n\nThe plugin should define these tables:\n\n1. `github_repos` — list repos for an owner/org\n   - Columns: id (number), name (string), full_name (string), description (string), stargazers_count (number), forks_count (number), language (string), html_url (string), private (boolean), archived (boolean), created_at (datetime), updated_at (datetime), topics (json)\n   - Key columns: owner (required, =)\n   - List: GET /users/{owner}/repos?per_page=100 — handle pagination via Link header\n   - Get: GET /repos/{owner}/{repo} — when name is also provided with =\n\n2. `github_issues` — list issues for a repo\n   - Columns: id (number), number (number), title (string), state (string), user_login (string), labels (json), body (string), created_at (datetime), updated_at (datetime), html_url (string)\n   - Key columns: owner (required, =), repo (required, =), state (optional, =)\n   - List: GET /repos/{owner}/{repo}/issues?per_page=100&state={state}\n   - Paginate via Link header\n\n3. `github_pull_requests` — list PRs for a repo\n   - Columns: id (number), number (number), title (string), state (string), user_login (string), head_ref (string), base_ref (string), created_at (datetime), merged_at (datetime), html_url (string)\n   - Key columns: owner (required, =), repo (required, =), state (optional, =)\n   - List: GET /repos/{owner}/{repo}/pulls?per_page=100\n\n4. `github_stargazers` — list stargazers for a repo\n   - Columns: login (string), starred_at (datetime)\n   - Key columns: owner (required, =), repo (required, =)\n   - List: GET /repos/{owner}/{repo}/stargazers — needs Accept: application/vnd.github.star+json header for starred_at\n\nFor HTTP calls, create a helper src/plugins/utils/http.ts:\n- `syncGet(url: string, headers?: Record<string, string>): { status: number, body: any, headers: Record<string, string> }` — uses child_process.execFileSync with curl. Parse response.\n- `syncGetPaginated(url: string, headers?: Record<string, string>): any[]` — follow GitHub Link: <url>; rel=\"next\" pagination, collect all pages.\n\nThe plugin should use the connection config for auth:\n- If config.token exists, add Authorization: Bearer {token} header\n- If no token, use unauthenticated (60 req/hr limit)\n\nDefault export the PluginDef.\n\nConnection config schema: { token: { type: 'string', required: false, description: 'GitHub personal access token' } }",
+      "check": {
+        "command": "npx tsx -e \"import plugin from './src/plugins/github.js'; console.log('github plugin:', plugin.name, plugin.tables.length, 'tables')\""
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:18:57.480Z",
+      "finishedAt": "2026-03-20T07:19:52.776Z",
+      "summary": "Created GitHub plugin with 4 tables and HTTP utils"
+    },
+    {
+      "id": 8,
+      "description": "Create the `dripline query` command in src/commands/query.ts. This is the main user-facing command.\n\nImplement:\n- Takes a SQL string as argument: `dripline query \"SELECT * FROM github_repos WHERE owner = 'torvalds'\"`\n- Loads config from .dripline/config.json\n- Loads plugins (builtin + configured)\n- Creates the query engine\n- Executes the SQL\n- Formats and displays results\n\nOutput formats (controlled by --output flag):\n- `table` (default) — formatted ASCII table. Use a simple implementation: calculate column widths from data, pad with spaces, draw borders with ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼. Truncate long values to terminal width. Show row count at bottom.\n- `json` — JSON array of objects\n- `csv` — CSV with header row\n- `line` — one column per line, records separated by blank line (like steampipe's line format)\n\nCreate src/utils/table-formatter.ts for the table output:\n- `formatTable(rows: Record<string, any>[], options?: { maxWidth?: number }): string`\n- Handle empty results: print 'No results.'\n- Handle null values: display as '<null>'\n- Handle long strings: truncate to column max width with '…'\n- Auto-detect terminal width using process.stdout.columns\n\nCreate src/utils/formatters.ts:\n- `formatJson(rows: any[]): string`\n- `formatCsv(rows: any[]): string` — proper CSV escaping (quote fields with commas/newlines)\n- `formatLine(rows: any[]): string`\n\nRegister the command in src/main.ts:\n```\nprogram.command('query <sql>')\n  .description('Execute a SQL query')\n  .option('-o, --output <format>', 'Output format: table, json, csv, line', 'table')\n  .action(...)\n```\n\nAlso add a shorthand: `dripline q` as alias.",
+      "check": {
+        "command": "npx tsx src/main.ts query \"SELECT 1 as test\" --output json 2>&1"
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:19:52.806Z",
+      "finishedAt": "2026-03-20T07:24:47.336Z",
+      "summary": "Created query command with table/json/csv/line formatters. Fixed get-vs-list routing with fallback."
+    },
+    {
+      "id": 9,
+      "description": "Create the interactive REPL in src/commands/repl.ts. This provides an interactive SQL shell.\n\nUse Node's built-in readline module (no external deps needed).\n\nImplement:\n- Prompt: `dripline> ` in cyan\n- Multi-line support: if a line doesn't end with `;`, continue reading (change prompt to `     ...> `)\n- Execute SQL on `;` — use the same query engine as the query command\n- Display results using table formatter\n- Show timing: `Time: 0.234s. 5 rows.`\n\nMeta-commands (start with `.`):\n- `.tables` — list all available tables with plugin name and description\n- `.inspect <table>` — show table columns with types, key columns marked, and description\n- `.connections` — list configured connections\n- `.cache` — show cache stats (size, hits, misses)\n- `.cache clear` — clear the cache\n- `.output <format>` — change output format (table/json/csv/line)\n- `.help` — show available meta-commands\n- `.quit` or `.exit` — exit\n\nHistory:\n- Save command history to .dripline/history\n- Load on startup\n- Use readline's built-in history support\n\nHandle Ctrl+C (cancel current input, don't exit) and Ctrl+D (exit).\n\nRegister in src/main.ts as the default command (no subcommand) and also as `dripline repl`.\n\nWhen user runs just `dripline` with no args, launch the REPL.",
+      "check": {
+        "command": "echo '.quit' | npx tsx src/main.ts repl 2>&1"
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:24:47.367Z",
+      "finishedAt": "2026-03-20T07:25:47.342Z",
+      "summary": "Created REPL with meta-commands, multi-line SQL, history, output format switching"
+    },
+    {
+      "id": 10,
+      "description": "Create a comprehensive integration test in src/tests/integration.test.ts that tests the full stack.\n\nTests should:\n1. Create a mock plugin with known data (no real API calls)\n2. Register it with the engine\n3. Run queries and verify results\n\nMock plugin 'mock' with tables:\n- `mock_users` — columns: id, name, email, role, active (boolean). Key column: role (optional). Returns 10 hardcoded users.\n- `mock_orders` — columns: id, user_id, amount, status, created_at. Key columns: user_id (optional), status (optional). Returns 20 hardcoded orders.\n\nTest cases:\n1. Basic SELECT * FROM mock_users — returns all 10\n2. SELECT with WHERE on key column — only matching rows returned\n3. SELECT with WHERE on non-key column — filtered by SQLite\n4. JOIN mock_users and mock_orders on user_id\n5. GROUP BY with COUNT and SUM\n6. Subquery\n7. LIMIT and OFFSET\n8. ORDER BY\n9. NULL handling\n10. Cache hit — run same query twice, verify cache.stats().hits increased\n11. Rate limiter — configure very low rate, verify queries still complete (just slower)\n12. Get vs List — query with all required key cols should use get path\n13. JSON column handling with json_extract\n14. Empty result set\n15. Error handling — plugin that throws\n\nUse Node's built-in test runner: `import { describe, it } from 'node:test'` and `import { strict as assert } from 'node:assert'`.\n\nAdd test script to package.json: \"test\": \"npx tsx --test src/tests/**/*.test.ts\"",
+      "check": {
+        "command": "npm test 2>&1"
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:25:47.373Z",
+      "finishedAt": "2026-03-20T07:26:42.110Z",
+      "summary": "All 27 integration tests pass"
+    },
+    {
+      "id": 11,
+      "description": "Update CLAUDE.md and README.md to reflect the full architecture. Update the onboard command instructions.\n\nCLAUDE.md should document:\n- Full architecture diagram (ASCII)\n- Plugin SDK: how to create a plugin (TableDef, ColumnDef, KeyColumn, list/get functions)\n- Config system: .dripline/config.json format\n- Query engine: how virtual tables work, caching, rate limiting\n- All commands: query, repl, init, onboard, plugin list\n- Adding a new plugin: step-by-step\n- Adding a new command: step-by-step\n- Key patterns: sync generators, execSync for HTTP, cache keys\n\nREADME.md should have:\n- Tagline and elevator pitch\n- Install: npm install -g dripline\n- Quick start (init, configure connection, query)\n- Full command reference\n- Plugin list\n- Writing a plugin guide\n- Configuration reference\n- For agents section (--json, onboard)\n- Comparison with Steampipe\n- License\n\nUpdate src/commands/onboard.ts INSTRUCTIONS to reflect actual commands.",
+      "check": {
+        "command": "npx tsx src/main.ts --help 2>&1"
+      },
+      "status": "done",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-03-20T07:26:42.143Z",
+      "finishedAt": "2026-03-20T07:27:57.105Z",
+      "summary": "Updated CLAUDE.md, README.md, and onboard instructions"
+    }
+  ],
+  "log": [
+    {
+      "timestamp": "2026-03-20T07:15:07.255Z",
+      "taskId": 1,
+      "event": "start",
+      "message": "Attempt 1/3: Create the plugin SDK types and interfaces in src/plugin/types.ts. This is the foundation everything else builds on.\n\nDefine these interfaces:\n\n1. `ColumnDef` — { name: string, type: 'string' | 'number' | 'boolean' | 'json' | 'datetime', description?: string }\n2. `KeyColumn` — { name: string, operators: string[] (default ['=']), required: 'required' | 'optional' | 'any_of' }\n3. `HydrateFunc` — (ctx: QueryContext, row: Record<string, any>) => Promise<Record<string, any>>\n4. `ListFunc` — (ctx: QueryContext) => AsyncGenerator<Record<string, any>>\n5. `GetFunc` — (ctx: QueryContext) => Promise<Record<string, any> | null>\n6. `TableDef` — { name: string, columns: ColumnDef[], keyColumns?: KeyColumn[], list: ListFunc, get?: GetFunc, hydrate?: { [columnName: string]: HydrateFunc }, description?: string }\n7. `PluginDef` — { name: string, version: string, tables: TableDef[], connectionConfigSchema?: Record<string, { type: string, required?: boolean, description?: string, default?: any }> }\n8. `QueryContext` — { connection: ConnectionConfig, quals: Qual[], columns: string[], limit?: number }\n9. `Qual` — { column: string, operator: string, value: any }\n10. `ConnectionConfig` — { name: string, plugin: string, config: Record<string, any> }\n11. `CacheEntry<T>` — { data: T[], timestamp: number, ttl: number }\n12. `RateLimitConfig` — { maxPerSecond?: number, maxPerMinute?: number, maxConcurrent?: number }\n\nAlso create src/plugin/index.ts that re-exports everything.\n\nUpdate src/types.ts to import and re-export from src/plugin/types.ts for backward compat."
+    },
+    {
+      "timestamp": "2026-03-20T07:15:31.775Z",
+      "taskId": 1,
+      "event": "done",
+      "message": "Created plugin SDK types in src/plugin/types.ts with all 12 interfaces. Created src/plugin/index.ts re-export. Updated src/types.ts for backward compat."
+    },
+    {
+      "timestamp": "2026-03-20T07:15:35.243Z",
+      "taskId": 2,
+      "event": "start",
+      "message": "Attempt 1/3: Create the plugin registry in src/plugin/registry.ts. This manages loading and registering plugins.\n\nImplement class `PluginRegistry`:\n- `private plugins: Map<string, PluginDef>` — registered plugins\n- `register(plugin: PluginDef): void` — add a plugin to the registry\n- `getPlugin(name: string): PluginDef | undefined`\n- `getTable(pluginName: string, tableName: string): TableDef | undefined`\n- `getAllTables(): Array<{ plugin: string, table: TableDef }>` — flat list of all tables across all plugins\n- `listPlugins(): PluginDef[]`\n\nExport a singleton `registry` instance.\n\nAlso create src/plugin/loader.ts:\n- `loadPluginFromPath(path: string): Promise<PluginDef>` — dynamic import of a plugin file, expects default export of PluginDef\n- `loadBuiltinPlugins(): Promise<void>` — loads all .ts/.js files from src/plugins/ dir, registers each\n- `loadPluginsFromConfig(configDir: string): Promise<void>` — reads .dripline/plugins.json for external plugin paths\n\nUpdate src/plugin/index.ts to export registry and loader."
+    },
+    {
+      "timestamp": "2026-03-20T07:16:02.156Z",
+      "taskId": 2,
+      "event": "done",
+      "message": "Created registry and loader"
+    },
+    {
+      "timestamp": "2026-03-20T07:16:04.875Z",
+      "taskId": 3,
+      "event": "start",
+      "message": "Attempt 1/3: Create the connection config system in src/config/. This manages how users configure API credentials and plugin settings.\n\nCreate src/config/types.ts:\n- `DriplineConfig` — { connections: ConnectionConfig[], defaultConnection?: string, cache?: { enabled: boolean, ttl: number, maxSize: number }, rateLimits?: Record<string, RateLimitConfig> }\n\nCreate src/config/loader.ts:\n- `findConfigDir(): string | null` — walk up from cwd looking for .dripline/\n- `loadConfig(): DriplineConfig` — reads .dripline/config.json, merges with defaults\n- `saveConfig(config: DriplineConfig): void` — writes .dripline/config.json\n- `getConnection(name: string): ConnectionConfig | undefined` — look up a connection by name\n- `addConnection(conn: ConnectionConfig): void` — add/update a connection in config\n- `removeConnection(name: string): boolean` — remove a connection\n\nDefaults:\n- cache.enabled = true, cache.ttl = 300 (seconds), cache.maxSize = 1000 (entries)\n- connections = []\n\nCreate src/config/index.ts re-exporting everything.\n\nThe config file format (.dripline/config.json):\n```json\n{\n  \"connections\": [\n    { \"name\": \"my_github\", \"plugin\": \"github\", \"config\": { \"token\": \"ghp_xxx\" } }\n  ],\n  \"cache\": { \"enabled\": true, \"ttl\": 300 },\n  \"rateLimits\": { \"github\": { \"maxPerSecond\": 5 } }\n}\n```"
+    },
+    {
+      "timestamp": "2026-03-20T07:16:44.426Z",
+      "taskId": 3,
+      "event": "done",
+      "message": "Created config system"
+    },
+    {
+      "timestamp": "2026-03-20T07:16:44.456Z",
+      "taskId": 4,
+      "event": "start",
+      "message": "Attempt 1/3: Create the caching layer in src/cache.ts. This prevents redundant API calls, especially critical for JOINs and subqueries that scan the same table multiple times.\n\nImplement class `QueryCache`:\n- `private cache: Map<string, CacheEntry<any>>` — in-memory cache\n- `private maxSize: number` — max entries, evict oldest when exceeded\n- `private defaultTtl: number` — default TTL in seconds\n- `private enabled: boolean`\n\nMethods:\n- `constructor(opts: { enabled?: boolean, ttl?: number, maxSize?: number })`\n- `getCacheKey(tableName: string, quals: Qual[], columns: string[]): string` — deterministic key from table + quals + columns. Sort quals and columns before hashing. Use JSON.stringify for simplicity.\n- `get<T>(key: string): T[] | null` — return cached data if not expired, null otherwise\n- `set<T>(key: string, data: T[], ttl?: number): void` — store with timestamp. If over maxSize, evict oldest entry.\n- `invalidate(tableName?: string): void` — clear entries for a table, or all if no table given\n- `clear(): void` — clear everything\n- `stats(): { size: number, hits: number, misses: number }` — basic stats\n\nTrack hits/misses with private counters.\n\nExport a singleton `queryCache` initialized with defaults, and a `configureCache(opts)` function to reconfigure it."
+    },
+    {
+      "timestamp": "2026-03-20T07:17:04.167Z",
+      "taskId": 4,
+      "event": "done",
+      "message": "Created cache"
+    },
+    {
+      "timestamp": "2026-03-20T07:17:04.198Z",
+      "taskId": 5,
+      "event": "start",
+      "message": "Attempt 1/3: Create the rate limiter in src/rate-limiter.ts. This prevents API abuse and respects provider rate limits.\n\nImplement class `RateLimiter`:\n- Uses a token bucket algorithm\n- `private buckets: Map<string, TokenBucket>` — per-scope buckets\n\nTokenBucket type:\n- `tokens: number` — current tokens\n- `maxTokens: number` — bucket capacity\n- `refillRate: number` — tokens added per second\n- `lastRefill: number` — timestamp of last refill\n- `queue: Array<{ resolve: () => void }>` — waiting requests\n\nMethods:\n- `constructor()`\n- `configure(scope: string, config: RateLimitConfig): void` — set up a bucket for a scope (plugin name, connection name, etc.). maxPerSecond maps to refillRate and maxTokens.\n- `async acquire(scope: string): Promise<void>` — take a token. If none available, wait until one is refilled. If no bucket exists for scope, pass through immediately (no limit).\n- `release(scope: string): void` — for concurrency limiting, release a slot\n- `private refill(bucket: TokenBucket): void` — add tokens based on elapsed time\n\nExport singleton `rateLimiter`.\n\nHandle maxConcurrent from RateLimitConfig by using a separate semaphore counter on the bucket."
+    },
+    {
+      "timestamp": "2026-03-20T07:17:36.030Z",
+      "taskId": 5,
+      "event": "done",
+      "message": "Created rate limiter with token bucket + sync acquire for virtual table context"
+    },
+    {
+      "timestamp": "2026-03-20T07:17:36.060Z",
+      "taskId": 6,
+      "event": "start",
+      "message": "Attempt 1/3: Create the query engine in src/engine.ts. This is the core — it creates the SQLite database, registers virtual tables from plugins, handles caching, rate limiting, pagination, and get-vs-list routing.\n\nImplement class `QueryEngine`:\n- `private db: Database` — better-sqlite3 instance (in-memory)\n- `private registry: PluginRegistry`\n- `private cache: QueryCache`\n- `private rateLimiter: RateLimiter`\n\nMethods:\n- `constructor(registry: PluginRegistry, cache: QueryCache, rateLimiter: RateLimiter)`\n- `initialize(config: DriplineConfig): void` — for each plugin in registry, for each table, call `registerTable()`\n- `private registerTable(pluginName: string, table: TableDef, connections: ConnectionConfig[]): void` — uses `db.table()` from better-sqlite3 to create a virtual table. The generator function should:\n  1. Build QueryContext from the parameters (connection name passed as hidden param)\n  2. Check cache — if hit, yield cached rows and return\n  3. Decide get vs list: if all required key columns have '=' quals in parameters, and table has a get function, use get. Otherwise use list.\n  4. Acquire rate limiter token for the plugin scope\n  5. Call the plugin's list/get function\n  6. For list: iterate the async generator. Handle pagination internally — the plugin's list function is expected to handle pagination itself (yielding all pages).\n  7. For each row: if table has hydrate functions AND the requested columns need them, call hydrate functions to enrich the row\n  8. Cache the results\n  9. Yield each row\n- `query(sql: string, params?: any[]): any[]` — execute SQL against the db, return rows\n- `close(): void` — close the db\n\nKey challenge: better-sqlite3's `db.table()` generator is synchronous. But API calls are async. Solution: use `child_process.execFileSync` or `Bun.spawnSync` to run an async fetch in a sync context, OR pre-fetch data in a sync wrapper using `execSync` calling back into node. Actually, the simpler approach: better-sqlite3 virtual table generators CAN be sync generators. So the plugin list/get functions need to be SYNC, not async. Update the types accordingly — ListFunc becomes `(ctx: QueryContext) => Generator<Record<string, any>>` (sync generator). The plugin implementations will use synchronous HTTP calls (e.g., execSync curl, or synchronous-fetch libraries).\n\nWait — re-evaluate this. The smoke test already proved sync generators work with execSync curl. But that's ugly. A cleaner approach: fetch all data synchronously into an array first, then yield from the array. The plugin's list function can internally use execSync or child_process.spawnSync to make HTTP calls.\n\nRegister the connection name as a hidden `parameters` column so users write `WHERE connection = 'my_github'`. If there's only one connection for a plugin, make it the default.\n\nExport `createEngine(config: DriplineConfig): QueryEngine`."
+    },
+    {
+      "timestamp": "2026-03-20T07:18:57.448Z",
+      "taskId": 6,
+      "event": "done",
+      "message": "Created query engine with virtual table registration, cache, rate limiting, get-vs-list routing. Fixed column yield bug."
+    },
+    {
+      "timestamp": "2026-03-20T07:18:57.480Z",
+      "taskId": 7,
+      "event": "start",
+      "message": "Attempt 1/3: Create a GitHub plugin as the first real plugin in src/plugins/github.ts. This proves the full stack works end-to-end.\n\nThe plugin should define these tables:\n\n1. `github_repos` — list repos for an owner/org\n   - Columns: id (number), name (string), full_name (string), description (string), stargazers_count (number), forks_count (number), language (string), html_url (string), private (boolean), archived (boolean), created_at (datetime), updated_at (datetime), topics (json)\n   - Key columns: owner (required, =)\n   - List: GET /users/{owner}/repos?per_page=100 — handle pagination via Link header\n   - Get: GET /repos/{owner}/{repo} — when name is also provided with =\n\n2. `github_issues` — list issues for a repo\n   - Columns: id (number), number (number), title (string), state (string), user_login (string), labels (json), body (string), created_at (datetime), updated_at (datetime), html_url (string)\n   - Key columns: owner (required, =), repo (required, =), state (optional, =)\n   - List: GET /repos/{owner}/{repo}/issues?per_page=100&state={state}\n   - Paginate via Link header\n\n3. `github_pull_requests` — list PRs for a repo\n   - Columns: id (number), number (number), title (string), state (string), user_login (string), head_ref (string), base_ref (string), created_at (datetime), merged_at (datetime), html_url (string)\n   - Key columns: owner (required, =), repo (required, =), state (optional, =)\n   - List: GET /repos/{owner}/{repo}/pulls?per_page=100\n\n4. `github_stargazers` — list stargazers for a repo\n   - Columns: login (string), starred_at (datetime)\n   - Key columns: owner (required, =), repo (required, =)\n   - List: GET /repos/{owner}/{repo}/stargazers — needs Accept: application/vnd.github.star+json header for starred_at\n\nFor HTTP calls, create a helper src/plugins/utils/http.ts:\n- `syncGet(url: string, headers?: Record<string, string>): { status: number, body: any, headers: Record<string, string> }` — uses child_process.execFileSync with curl. Parse response.\n- `syncGetPaginated(url: string, headers?: Record<string, string>): any[]` — follow GitHub Link: <url>; rel=\"next\" pagination, collect all pages.\n\nThe plugin should use the connection config for auth:\n- If config.token exists, add Authorization: Bearer {token} header\n- If no token, use unauthenticated (60 req/hr limit)\n\nDefault export the PluginDef.\n\nConnection config schema: { token: { type: 'string', required: false, description: 'GitHub personal access token' } }"
+    },
+    {
+      "timestamp": "2026-03-20T07:19:52.776Z",
+      "taskId": 7,
+      "event": "done",
+      "message": "Created GitHub plugin with 4 tables and HTTP utils"
+    },
+    {
+      "timestamp": "2026-03-20T07:19:52.806Z",
+      "taskId": 8,
+      "event": "start",
+      "message": "Attempt 1/3: Create the `dripline query` command in src/commands/query.ts. This is the main user-facing command.\n\nImplement:\n- Takes a SQL string as argument: `dripline query \"SELECT * FROM github_repos WHERE owner = 'torvalds'\"`\n- Loads config from .dripline/config.json\n- Loads plugins (builtin + configured)\n- Creates the query engine\n- Executes the SQL\n- Formats and displays results\n\nOutput formats (controlled by --output flag):\n- `table` (default) — formatted ASCII table. Use a simple implementation: calculate column widths from data, pad with spaces, draw borders with ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼. Truncate long values to terminal width. Show row count at bottom.\n- `json` — JSON array of objects\n- `csv` — CSV with header row\n- `line` — one column per line, records separated by blank line (like steampipe's line format)\n\nCreate src/utils/table-formatter.ts for the table output:\n- `formatTable(rows: Record<string, any>[], options?: { maxWidth?: number }): string`\n- Handle empty results: print 'No results.'\n- Handle null values: display as '<null>'\n- Handle long strings: truncate to column max width with '…'\n- Auto-detect terminal width using process.stdout.columns\n\nCreate src/utils/formatters.ts:\n- `formatJson(rows: any[]): string`\n- `formatCsv(rows: any[]): string` — proper CSV escaping (quote fields with commas/newlines)\n- `formatLine(rows: any[]): string`\n\nRegister the command in src/main.ts:\n```\nprogram.command('query <sql>')\n  .description('Execute a SQL query')\n  .option('-o, --output <format>', 'Output format: table, json, csv, line', 'table')\n  .action(...)\n```\n\nAlso add a shorthand: `dripline q` as alias."
+    },
+    {
+      "timestamp": "2026-03-20T07:24:47.336Z",
+      "taskId": 8,
+      "event": "done",
+      "message": "Created query command with table/json/csv/line formatters. Fixed get-vs-list routing with fallback."
+    },
+    {
+      "timestamp": "2026-03-20T07:24:47.367Z",
+      "taskId": 9,
+      "event": "start",
+      "message": "Attempt 1/3: Create the interactive REPL in src/commands/repl.ts. This provides an interactive SQL shell.\n\nUse Node's built-in readline module (no external deps needed).\n\nImplement:\n- Prompt: `dripline> ` in cyan\n- Multi-line support: if a line doesn't end with `;`, continue reading (change prompt to `     ...> `)\n- Execute SQL on `;` — use the same query engine as the query command\n- Display results using table formatter\n- Show timing: `Time: 0.234s. 5 rows.`\n\nMeta-commands (start with `.`):\n- `.tables` — list all available tables with plugin name and description\n- `.inspect <table>` — show table columns with types, key columns marked, and description\n- `.connections` — list configured connections\n- `.cache` — show cache stats (size, hits, misses)\n- `.cache clear` — clear the cache\n- `.output <format>` — change output format (table/json/csv/line)\n- `.help` — show available meta-commands\n- `.quit` or `.exit` — exit\n\nHistory:\n- Save command history to .dripline/history\n- Load on startup\n- Use readline's built-in history support\n\nHandle Ctrl+C (cancel current input, don't exit) and Ctrl+D (exit).\n\nRegister in src/main.ts as the default command (no subcommand) and also as `dripline repl`.\n\nWhen user runs just `dripline` with no args, launch the REPL."
+    },
+    {
+      "timestamp": "2026-03-20T07:25:47.342Z",
+      "taskId": 9,
+      "event": "done",
+      "message": "Created REPL with meta-commands, multi-line SQL, history, output format switching"
+    },
+    {
+      "timestamp": "2026-03-20T07:25:47.373Z",
+      "taskId": 10,
+      "event": "start",
+      "message": "Attempt 1/3: Create a comprehensive integration test in src/tests/integration.test.ts that tests the full stack.\n\nTests should:\n1. Create a mock plugin with known data (no real API calls)\n2. Register it with the engine\n3. Run queries and verify results\n\nMock plugin 'mock' with tables:\n- `mock_users` — columns: id, name, email, role, active (boolean). Key column: role (optional). Returns 10 hardcoded users.\n- `mock_orders` — columns: id, user_id, amount, status, created_at. Key columns: user_id (optional), status (optional). Returns 20 hardcoded orders.\n\nTest cases:\n1. Basic SELECT * FROM mock_users — returns all 10\n2. SELECT with WHERE on key column — only matching rows returned\n3. SELECT with WHERE on non-key column — filtered by SQLite\n4. JOIN mock_users and mock_orders on user_id\n5. GROUP BY with COUNT and SUM\n6. Subquery\n7. LIMIT and OFFSET\n8. ORDER BY\n9. NULL handling\n10. Cache hit — run same query twice, verify cache.stats().hits increased\n11. Rate limiter — configure very low rate, verify queries still complete (just slower)\n12. Get vs List — query with all required key cols should use get path\n13. JSON column handling with json_extract\n14. Empty result set\n15. Error handling — plugin that throws\n\nUse Node's built-in test runner: `import { describe, it } from 'node:test'` and `import { strict as assert } from 'node:assert'`.\n\nAdd test script to package.json: \"test\": \"npx tsx --test src/tests/**/*.test.ts\""
+    },
+    {
+      "timestamp": "2026-03-20T07:26:42.110Z",
+      "taskId": 10,
+      "event": "done",
+      "message": "All 27 integration tests pass"
+    },
+    {
+      "timestamp": "2026-03-20T07:26:42.143Z",
+      "taskId": 11,
+      "event": "start",
+      "message": "Attempt 1/3: Update CLAUDE.md and README.md to reflect the full architecture. Update the onboard command instructions.\n\nCLAUDE.md should document:\n- Full architecture diagram (ASCII)\n- Plugin SDK: how to create a plugin (TableDef, ColumnDef, KeyColumn, list/get functions)\n- Config system: .dripline/config.json format\n- Query engine: how virtual tables work, caching, rate limiting\n- All commands: query, repl, init, onboard, plugin list\n- Adding a new plugin: step-by-step\n- Adding a new command: step-by-step\n- Key patterns: sync generators, execSync for HTTP, cache keys\n\nREADME.md should have:\n- Tagline and elevator pitch\n- Install: npm install -g dripline\n- Quick start (init, configure connection, query)\n- Full command reference\n- Plugin list\n- Writing a plugin guide\n- Configuration reference\n- For agents section (--json, onboard)\n- Comparison with Steampipe\n- License\n\nUpdate src/commands/onboard.ts INSTRUCTIONS to reflect actual commands."
+    },
+    {
+      "timestamp": "2026-03-20T07:27:57.105Z",
+      "taskId": 11,
+      "event": "done",
+      "message": "Updated CLAUDE.md, README.md, and onboard instructions"
+    }
+  ],
+  "createdAt": "2026-03-20T07:13:08.732Z",
+  "updatedAt": "2026-03-20T07:27:57.105Z"
+}

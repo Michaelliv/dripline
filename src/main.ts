@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 import { init } from "./commands/init.js";
 import { onboard } from "./commands/onboard.js";
+import { query } from "./commands/query.js";
+import { repl } from "./commands/repl.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
@@ -33,7 +35,33 @@ program
     await onboard([], { json: root.json, quiet: root.quiet });
   });
 
-program.parseAsync(process.argv).catch((err) => {
-  console.error("Fatal error:", err.message);
-  process.exit(1);
-});
+program
+  .command("query <sql>")
+  .alias("q")
+  .description("Execute a SQL query")
+  .option("-o, --output <format>", "Output format: table, json, csv, line", "table")
+  .action(async (sql, opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    await query(sql, {
+      output: opts.output,
+      json: globals.json,
+      quiet: globals.quiet,
+    });
+  });
+
+program
+  .command("repl")
+  .description("Start interactive SQL shell")
+  .action(async () => {
+    await repl();
+  });
+
+// Default to REPL when no command given
+if (process.argv.length <= 2) {
+  repl();
+} else {
+  program.parseAsync(process.argv).catch((err) => {
+    console.error("Fatal error:", err.message);
+    process.exit(1);
+  });
+}
