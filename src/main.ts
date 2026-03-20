@@ -29,7 +29,7 @@ program
   .addHelpText("after", `
 Examples:
   $ dripline query "SELECT name, stargazers_count FROM github_repos WHERE owner = 'torvalds' LIMIT 5"
-  $ dripline connection add gh --plugin github --prompt token
+  $ dripline connection add gh --plugin github --set token=ghp_xxx
   $ dripline plugin list
   $ dripline                              # start interactive REPL
 
@@ -61,16 +61,13 @@ connCmd
   .description("Add a connection")
   .requiredOption("-p, --plugin <plugin>", "Plugin name")
   .option("-s, --set <key=value...>", "Config values", (v: string, prev: string[]) => [...prev, v], [])
-  .option("--prompt <key>", "Prompt for a secret value (hidden input)")
-  .option("--stdin <key>", "Read a value from stdin")
   .addHelpText("after", `
 Examples:
-  $ dripline connection add gh --plugin github --prompt token
-  $ echo 'ghp_xxx' | dripline connection add gh --plugin github --stdin token
+  $ dripline connection add gh --plugin github --set token=ghp_xxx
   $ dripline connection add mydb --plugin postgres --set host=localhost --set port=5432`)
   .action(async (name, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
-    await connectionAdd(name, { plugin: opts.plugin, set: opts.set, prompt: opts.prompt, stdin: opts.stdin, json: globals.json });
+    await connectionAdd(name, { plugin: opts.plugin, set: opts.set, json: globals.json });
   });
 
 connCmd

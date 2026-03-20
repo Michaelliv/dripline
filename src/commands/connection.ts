@@ -1,4 +1,3 @@
-import * as readline from "node:readline";
 import chalk from "chalk";
 import {
   loadConfig,
@@ -7,46 +6,11 @@ import {
 } from "../config/loader.js";
 import { success, error, bold, dim } from "../utils/output.js";
 
-function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    process.stdin.setEncoding("utf-8");
-    process.stdin.on("data", (chunk) => { data += chunk; });
-    process.stdin.on("end", () => resolve(data.trim()));
-    process.stdin.on("error", reject);
-  });
-}
-
-function promptSecret(label: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stderr,
-      terminal: true,
-    });
-    rl.question(`${label}: `, (answer) => {
-      rl.close();
-      process.stderr.write("\n");
-      resolve(answer.trim());
-    });
-    // Hide input
-    const origWrite = (process.stderr as any)._write;
-    (rl as any)._writeToOutput = () => {};
-  });
-}
-
 export async function connectionAdd(
   name: string,
-  options: {
-    plugin: string;
-    set?: string[];
-    prompt?: string;
-    stdin?: string;
-    json?: boolean;
-  },
+  options: { plugin: string; set?: string[]; json?: boolean },
 ): Promise<void> {
   const config: Record<string, any> = {};
-
   for (const kv of options.set ?? []) {
     const eq = kv.indexOf("=");
     if (eq < 0) {
@@ -54,28 +18,6 @@ export async function connectionAdd(
       process.exit(1);
     }
     config[kv.slice(0, eq)] = kv.slice(eq + 1);
-  }
-
-  if (options.stdin) {
-    const value = await readStdin();
-    if (!value) {
-      error("No input received from stdin");
-      process.exit(1);
-    }
-    config[options.stdin] = value;
-  }
-
-  if (options.prompt) {
-    if (!process.stdin.isTTY) {
-      error("--prompt requires an interactive terminal. Use --stdin instead.");
-      process.exit(1);
-    }
-    const value = await promptSecret(options.prompt);
-    if (!value) {
-      error("No value entered");
-      process.exit(1);
-    }
-    config[options.prompt] = value;
   }
 
   addConnection({ name, plugin: options.plugin, config });
@@ -111,7 +53,7 @@ export async function connectionList(options: { json?: boolean }): Promise<void>
 
   if (config.connections.length === 0) {
     console.log("No connections configured.");
-    console.log(dim(`  Add one: dripline connection add <name> --plugin <plugin> --prompt token`));
+    console.log(dim(`  Add one: dripline connection add <name> --plugin <plugin> --set key=value`));
     return;
   }
 

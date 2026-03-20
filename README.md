@@ -23,7 +23,7 @@ dripline query "SELECT name, stargazers_count, language
 Add auth for higher rate limits:
 
 ```bash
-dripline connection add gh --plugin github --prompt token
+dripline connection add gh --plugin github --set token=ghp_xxx
 ```
 
 Or use environment variables (no config needed):
@@ -52,7 +52,7 @@ SQL query → SQLite virtual table → sync generator → API call → yield row
 dripline                              # Interactive REPL
 dripline query "<sql>"                # Execute a query (alias: dripline q)
 dripline init                         # Create .dripline/ directory
-dripline connection add <name>        # Add a connection (--plugin, --prompt, --stdin)
+dripline connection add <name>        # Add a connection (--plugin, --set key=val)
 dripline connection list              # List connections
 dripline connection remove <name>     # Remove a connection
 dripline plugin list                  # List all plugins
@@ -168,7 +168,7 @@ dl.close();
 Connections are stored in `.dripline/config.json`. Manage them with the CLI:
 
 ```bash
-dripline connection add gh --plugin github --prompt token
+dripline connection add gh --plugin github --set token=ghp_xxx
 dripline connection list
 dripline connection remove gh
 ```
