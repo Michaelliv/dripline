@@ -95,6 +95,36 @@ WHERE r.owner = 'Michaelliv' AND i.owner = 'Michaelliv'
 GROUP BY r.name;
 ```
 
+### Mix APIs with anything
+
+Powered by DuckDB. Query APIs, local files, remote files, and databases in the same SQL:
+
+```sql
+-- Join GitHub stars with revenue data from a CSV
+SELECT r.name, r.stargazers_count, s.revenue
+FROM github_repos r
+JOIN read_csv_auto('./revenue.csv') s ON r.name = s.repo
+WHERE r.owner = 'Michaelliv'
+ORDER BY s.revenue DESC;
+
+-- Enrich a Parquet file on S3 with live API data
+SELECT p.user_id, p.event, g.login, g.starred_at
+FROM read_parquet('s3://my-bucket/events.parquet') p
+JOIN github_stargazers g ON p.github_user = g.login
+WHERE g.owner = 'Michaelliv' AND g.repo = 'dripline';
+
+-- Query a JSON API directly (no plugin needed)
+SELECT login, type
+FROM read_json_auto('https://api.github.com/users/Michaelliv/followers');
+
+-- Window functions on API data
+SELECT name, stargazers_count,
+  RANK() OVER (ORDER BY stargazers_count DESC) as rank,
+  ROUND(stargazers_count * 100.0 / SUM(stargazers_count) OVER (), 1) as pct
+FROM github_repos
+WHERE owner = 'Michaelliv' AND stargazers_count > 0;
+```
+
 ### Installing plugins
 
 ```bash
