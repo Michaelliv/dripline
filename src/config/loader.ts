@@ -53,7 +53,38 @@ export function saveConfig(config: DriplineConfig): void {
 
 export function getConnection(name: string): ConnectionConfig | undefined {
   const config = loadConfig();
-  return config.connections.find((c) => c.name === name);
+  const conn = config.connections.find((c) => c.name === name);
+  if (conn) return applyEnvOverrides(conn);
+  return conn;
+}
+
+export function resolveEnvConnection(plugin: string): ConnectionConfig | null {
+  const prefix = `DRIPLINE_${plugin.toUpperCase()}_`;
+  const envConfig: Record<string, any> = {};
+
+  for (const [key, val] of Object.entries(process.env)) {
+    if (key.startsWith(prefix) && val) {
+      const field = key.slice(prefix.length).toLowerCase();
+      envConfig[field] = val;
+    }
+  }
+
+  if (Object.keys(envConfig).length === 0) return null;
+  return { name: `${plugin}_env`, plugin, config: envConfig };
+}
+
+function applyEnvOverrides(conn: ConnectionConfig): ConnectionConfig {
+  const prefix = `DRIPLINE_${conn.plugin.toUpperCase()}_`;
+  const merged = { ...conn.config };
+
+  for (const [key, val] of Object.entries(process.env)) {
+    if (key.startsWith(prefix) && val) {
+      const field = key.slice(prefix.length).toLowerCase();
+      merged[field] = val;
+    }
+  }
+
+  return { ...conn, config: merged };
 }
 
 export function addConnection(conn: ConnectionConfig): void {

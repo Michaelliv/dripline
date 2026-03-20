@@ -7,6 +7,7 @@ import { onboard } from "./commands/onboard.js";
 import { query } from "./commands/query.js";
 import { repl } from "./commands/repl.js";
 import { pluginInstall, pluginRemove, pluginList } from "./commands/plugin.js";
+import { connectionAdd, connectionRemove, connectionList } from "./commands/connection.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
@@ -82,6 +83,34 @@ pluginCmd
   .action(async (_opts, cmd) => {
     const globals = cmd.optsWithGlobals();
     await pluginList({ json: globals.json });
+  });
+
+const connCmd = program.command("connection").alias("conn").description("Manage connections");
+
+connCmd
+  .command("add <name>")
+  .description("Add a connection")
+  .requiredOption("-p, --plugin <plugin>", "Plugin name")
+  .option("-s, --set <key=value...>", "Config values", (v: string, prev: string[]) => [...prev, v], [])
+  .action(async (name, opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    await connectionAdd(name, { plugin: opts.plugin, set: opts.set, json: globals.json });
+  });
+
+connCmd
+  .command("remove <name>")
+  .description("Remove a connection")
+  .action(async (name, _opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    await connectionRemove(name, { json: globals.json });
+  });
+
+connCmd
+  .command("list")
+  .description("List connections")
+  .action(async (_opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    await connectionList({ json: globals.json });
   });
 
 if (process.argv.length <= 2) {

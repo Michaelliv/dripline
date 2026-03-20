@@ -6,4 +6,5 @@ export {
   getConnection,
   addConnection,
   removeConnection,
+  resolveEnvConnection,
 } from "./loader.js";

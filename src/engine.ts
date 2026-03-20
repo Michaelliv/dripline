@@ -9,6 +9,7 @@ import type {
   QueryContext,
   Qual,
 } from "./plugin/types.js";
+import { resolveEnvConnection } from "./config/loader.js";
 
 export class QueryEngine {
   private db: Database.Database;
@@ -81,7 +82,7 @@ export class QueryEngine {
         } else if (connections.length === 1) {
           connection = connections[0];
         } else {
-          connection = {
+          connection = resolveEnvConnection(pluginName) ?? {
             name: "default",
             plugin: pluginName,
             config: {},
