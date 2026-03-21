@@ -1,15 +1,22 @@
-import type { DriplinePluginAPI, QueryContext } from "dripline";
-import { syncGet, syncExec } from "dripline";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
+import type { DriplinePluginAPI, QueryContext } from "dripline";
+import { syncExec, syncGet } from "dripline";
 
 function getToken(): string | null {
   // 1. Env var
   if (process.env.CLOUDFLARE_API_TOKEN) return process.env.CLOUDFLARE_API_TOKEN;
 
   // 2. Wrangler OAuth token
-  const configPath = join(homedir(), "Library", "Preferences", ".wrangler", "config", "default.toml");
+  const configPath = join(
+    homedir(),
+    "Library",
+    "Preferences",
+    ".wrangler",
+    "config",
+    "default.toml",
+  );
   if (existsSync(configPath)) {
     const content = readFileSync(configPath, "utf-8");
     const match = content.match(/oauth_token\s*=\s*"([^"]+)"/);
@@ -28,15 +35,19 @@ function getToken(): string | null {
 }
 
 function getAccountId(): string | null {
-  if (process.env.CLOUDFLARE_ACCOUNT_ID) return process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (process.env.CLOUDFLARE_ACCOUNT_ID)
+    return process.env.CLOUDFLARE_ACCOUNT_ID;
 
   // Get from API
   const token = getToken();
   if (!token) return null;
 
-  const resp = syncGet("https://api.cloudflare.com/client/v4/accounts?per_page=1", {
-    Authorization: `Bearer ${token}`,
-  });
+  const resp = syncGet(
+    "https://api.cloudflare.com/client/v4/accounts?per_page=1",
+    {
+      Authorization: `Bearer ${token}`,
+    },
+  );
   return resp.body?.result?.[0]?.id ?? null;
 }
 
@@ -61,10 +72,19 @@ export default function cloudflare(dl: DriplinePluginAPI) {
 
   function cfGet(path: string): any[] {
     const token = getToken();
-    if (!token) { dl.log.warn("No Cloudflare auth found"); return []; }
+    if (!token) {
+      dl.log.warn("No Cloudflare auth found");
+      return [];
+    }
 
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const resp = syncGet(`https://api.cloudflare.com/client/v4${path}`, headers);
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+    const resp = syncGet(
+      `https://api.cloudflare.com/client/v4${path}`,
+      headers,
+    );
     if (resp.status !== 200) return [];
     return resp.body?.result ?? [];
   }
@@ -142,9 +162,7 @@ export default function cloudflare(dl: DriplinePluginAPI) {
       { name: "created_on", type: "datetime" },
       { name: "modified_on", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "zone_name", required: "required", operators: ["="] },
-    ],
+    keyColumns: [{ name: "zone_name", required: "required", operators: ["="] }],
     *list(ctx) {
       const zoneName = ctx.quals.find((q) => q.column === "zone_name")?.value;
       if (!zoneName) return;
@@ -197,7 +215,8 @@ export default function cloudflare(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("cf_pages_deployments", {
-    description: "Cloudflare Pages deployments. Use WHERE project_name = 'my-project'",
+    description:
+      "Cloudflare Pages deployments. Use WHERE project_name = 'my-project'",
     columns: [
       { name: "id", type: "string" },
       { name: "environment", type: "string" },
@@ -211,10 +230,14 @@ export default function cloudflare(dl: DriplinePluginAPI) {
       { name: "project_name", required: "required", operators: ["="] },
     ],
     *list(ctx) {
-      const projectName = ctx.quals.find((q) => q.column === "project_name")?.value;
+      const projectName = ctx.quals.find(
+        (q) => q.column === "project_name",
+      )?.value;
       if (!projectName) return;
 
-      const items = cfGet(accountPath(`/pages/projects/${projectName}/deployments`));
+      const items = cfGet(
+        accountPath(`/pages/projects/${projectName}/deployments`),
+      );
       for (const d of items) {
         yield {
           id: d.id ?? "",
@@ -293,7 +316,8 @@ export default function cloudflare(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("cf_dns_lookup", {
-    description: "DNS lookup via Cloudflare 1.1.1.1 (public, no auth needed). Use WHERE domain = 'example.com'",
+    description:
+      "DNS lookup via Cloudflare 1.1.1.1 (public, no auth needed). Use WHERE domain = 'example.com'",
     columns: [
       { name: "domain", type: "string" },
       { name: "record_type", type: "string" },
@@ -308,8 +332,12 @@ export default function cloudflare(dl: DriplinePluginAPI) {
       const domain = ctx.quals.find((q) => q.column === "domain")?.value;
       if (!domain) return;
 
-      const requestedType = ctx.quals.find((q) => q.column === "record_type")?.value;
-      const types = requestedType ? [requestedType] : ["A", "AAAA", "CNAME", "MX", "TXT", "NS"];
+      const requestedType = ctx.quals.find(
+        (q) => q.column === "record_type",
+      )?.value;
+      const types = requestedType
+        ? [requestedType]
+        : ["A", "AAAA", "CNAME", "MX", "TXT", "NS"];
 
       for (const type of types) {
         const resp = syncGet(
@@ -331,7 +359,8 @@ export default function cloudflare(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("cf_domain_check", {
-    description: "Check domain availability via DNS. Use WHERE domain = 'example.com' or pass multiple TLDs with name = 'myapp' AND tlds = 'com,dev,sh,io'",
+    description:
+      "Check domain availability via DNS. Use WHERE domain = 'example.com' or pass multiple TLDs with name = 'myapp' AND tlds = 'com,dev,sh,io'",
     columns: [
       { name: "domain", type: "string" },
       { name: "available", type: "boolean" },
@@ -344,14 +373,18 @@ export default function cloudflare(dl: DriplinePluginAPI) {
     ],
     *list(ctx) {
       const singleDomain = ctx.quals.find((q) => q.column === "domain")?.value;
-      const namePrefix = ctx.quals.find((q) => q.column === "name_prefix")?.value;
+      const namePrefix = ctx.quals.find(
+        (q) => q.column === "name_prefix",
+      )?.value;
       const tlds = ctx.quals.find((q) => q.column === "tlds")?.value;
 
       let domains: string[] = [];
       if (singleDomain) {
         domains = [singleDomain];
       } else if (namePrefix) {
-        const tldList = tlds ? tlds.split(",").map((t: string) => t.trim()) : ["com", "dev", "io", "sh", "app", "co", "net", "org"];
+        const tldList = tlds
+          ? tlds.split(",").map((t: string) => t.trim())
+          : ["com", "dev", "io", "sh", "app", "co", "net", "org"];
         domains = tldList.map((tld: string) => `${namePrefix}.${tld}`);
       }
 
@@ -405,8 +438,15 @@ export default function cloudflare(dl: DriplinePluginAPI) {
 
 function dnsTypeToString(type: number): string {
   const types: Record<number, string> = {
-    1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 15: "MX",
-    16: "TXT", 28: "AAAA", 33: "SRV", 257: "CAA",
+    1: "A",
+    2: "NS",
+    5: "CNAME",
+    6: "SOA",
+    15: "MX",
+    16: "TXT",
+    28: "AAAA",
+    33: "SRV",
+    257: "CAA",
   };
   return types[type] ?? String(type);
 }

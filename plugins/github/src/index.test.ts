@@ -1,10 +1,16 @@
-import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import githubFn from "./index.js";
-import { resolvePluginExport } from "dripline";
+import { describe, it } from "node:test";
 import type { ColumnType, PluginDef } from "dripline";
+import { resolvePluginExport } from "dripline";
+import githubFn from "./index.js";
 
-const VALID_TYPES: ColumnType[] = ["string", "number", "boolean", "json", "datetime"];
+const VALID_TYPES: ColumnType[] = [
+  "string",
+  "number",
+  "boolean",
+  "json",
+  "datetime",
+];
 
 const plugin: PluginDef = resolvePluginExport(githubFn, "github");
 
@@ -55,7 +61,9 @@ describe("GitHub Plugin", () => {
 
   it("github_issues has issue_state as optional", () => {
     const kc = getTable("github_issues").keyColumns!;
-    assert.ok(kc.find((k) => k.name === "issue_state" && k.required === "optional"));
+    assert.ok(
+      kc.find((k) => k.name === "issue_state" && k.required === "optional"),
+    );
   });
 
   it("github_pull_requests structure", () => {
@@ -91,7 +99,10 @@ describe("GitHub Plugin", () => {
   it("all column types are valid", () => {
     for (const t of plugin.tables) {
       for (const c of t.columns) {
-        assert.ok(VALID_TYPES.includes(c.type), `${t.name}.${c.name} has invalid type: ${c.type}`);
+        assert.ok(
+          VALID_TYPES.includes(c.type),
+          `${t.name}.${c.name} has invalid type: ${c.type}`,
+        );
       }
     }
   });

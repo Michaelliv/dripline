@@ -4,11 +4,27 @@
   "description": "Vercel plugin for dripline — query projects, deployments, domains, and environment variables",
   "type": "module",
   "main": "dist/index.js",
-  "exports": { ".": "./dist/index.js" },
-  "files": ["dist"],
-  "scripts": { "build": "tsc", "prepublishOnly": "npm run build" },
-  "keywords": ["dripline", "plugin", "vercel", "deployments"],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "vercel",
+    "deployments"
+  ],
   "license": "MIT",
-  "peerDependencies": { "dripline": ">=0.2.0" },
-  "devDependencies": { "typescript": "^5.8.0" }
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
 }

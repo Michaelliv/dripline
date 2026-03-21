@@ -6,7 +6,9 @@ export default function systemProfiler(dl: DriplinePluginAPI) {
   dl.setVersion("0.1.0");
 
   function getProfilerData(dataType: string): any[] {
-    const { rows: [data] } = syncExec("system_profiler", [dataType, "-json"], { parser: "json" });
+    const {
+      rows: [data],
+    } = syncExec("system_profiler", [dataType, "-json"], { parser: "json" });
     return data?.[dataType] ?? [];
   }
 
@@ -61,9 +63,16 @@ export default function systemProfiler(dl: DriplinePluginAPI) {
           model_name: h.machine_name ?? "",
           model_identifier: h.machine_model ?? "",
           chip: h.chip_type ?? "",
-          total_cores: parseInt(h.number_processors?.match(/\d+/)?.[0] ?? "0", 10) || null,
-          performance_cores: parseInt(h.number_performance_cores?.match(/\d+/)?.[0] ?? "0", 10) || null,
-          efficiency_cores: parseInt(h.number_efficiency_cores?.match(/\d+/)?.[0] ?? "0", 10) || null,
+          total_cores:
+            parseInt(h.number_processors?.match(/\d+/)?.[0] ?? "0", 10) || null,
+          performance_cores:
+            parseInt(
+              h.number_performance_cores?.match(/\d+/)?.[0] ?? "0",
+              10,
+            ) || null,
+          efficiency_cores:
+            parseInt(h.number_efficiency_cores?.match(/\d+/)?.[0] ?? "0", 10) ||
+            null,
           memory: h.physical_memory ?? "",
           serial_number: h.serial_number ?? "",
           hardware_uuid: h.platform_UUID ?? "",
@@ -122,8 +131,14 @@ export default function systemProfiler(dl: DriplinePluginAPI) {
           name: v._name ?? "",
           mount_point: v.mount_point ?? "",
           file_system: v.file_system ?? "",
-          size: v.size_in_bytes ? formatBytes(v.size_in_bytes) : v.free_space_in_bytes ? "" : "",
-          free_space: v.free_space_in_bytes ? formatBytes(v.free_space_in_bytes) : "",
+          size: v.size_in_bytes
+            ? formatBytes(v.size_in_bytes)
+            : v.free_space_in_bytes
+              ? ""
+              : "",
+          free_space: v.free_space_in_bytes
+            ? formatBytes(v.free_space_in_bytes)
+            : "",
           writable: v.writable === "yes" ? 1 : 0,
           device_name: v.physical_drive?.device_name ?? v.device_name ?? "",
           physical_drive_type: v.physical_drive?.medium_type ?? "",

@@ -4,11 +4,30 @@
   "description": "Cloudflare plugin for dripline — query Workers, D1 databases, KV namespaces, R2 buckets, Pages projects, and Queues",
   "type": "module",
   "main": "dist/index.js",
-  "exports": { ".": "./dist/index.js" },
-  "files": ["dist"],
-  "scripts": { "build": "tsc", "prepublishOnly": "npm run build" },
-  "keywords": ["dripline", "plugin", "cloudflare", "workers", "d1", "r2", "kv"],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "cloudflare",
+    "workers",
+    "d1",
+    "r2",
+    "kv"
+  ],
   "license": "MIT",
-  "peerDependencies": { "dripline": ">=0.2.0" },
-  "devDependencies": { "typescript": "^5.8.0" }
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
 }

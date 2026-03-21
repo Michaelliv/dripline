@@ -1,5 +1,5 @@
 import type { DriplinePluginAPI } from "dripline";
-import { syncExec, commandExists } from "dripline";
+import { commandExists, syncExec } from "dripline";
 
 export default function brew(dl: DriplinePluginAPI) {
   dl.setName("brew");
@@ -27,7 +27,11 @@ export default function brew(dl: DriplinePluginAPI) {
       { name: "dependencies", type: "json" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("brew", ["info", "--json=v2", "--installed"], { parser: "json" });
+      const {
+        rows: [data],
+      } = syncExec("brew", ["info", "--json=v2", "--installed"], {
+        parser: "json",
+      });
       const formulae: any[] = data?.formulae ?? [];
 
       for (const f of formulae) {
@@ -63,7 +67,11 @@ export default function brew(dl: DriplinePluginAPI) {
       { name: "auto_updates", type: "boolean" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("brew", ["info", "--json=v2", "--installed"], { parser: "json" });
+      const {
+        rows: [data],
+      } = syncExec("brew", ["info", "--json=v2", "--installed"], {
+        parser: "json",
+      });
       const casks: any[] = data?.casks ?? [];
 
       for (const c of casks) {
@@ -92,7 +100,9 @@ export default function brew(dl: DriplinePluginAPI) {
       { name: "pinned", type: "boolean" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("brew", ["outdated", "--json=v2"], { parser: "json" });
+      const {
+        rows: [data],
+      } = syncExec("brew", ["outdated", "--json=v2"], { parser: "json" });
 
       for (const f of data?.formulae ?? []) {
         yield {
@@ -126,7 +136,9 @@ export default function brew(dl: DriplinePluginAPI) {
       { name: "exit_code", type: "number" },
     ],
     *list() {
-      const { rows } = syncExec("brew", ["services", "list", "--json"], { parser: "json" });
+      const { rows } = syncExec("brew", ["services", "list", "--json"], {
+        parser: "json",
+      });
 
       for (const s of rows) {
         yield {

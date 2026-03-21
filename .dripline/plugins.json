@@ -64,6 +64,211 @@
       "source": "./plugins/vercel/src/index.ts",
       "path": "/Users/michaelliv/Projects/dripline/plugins/vercel/src/index.ts",
       "name": "index"
+    },
+    {
+      "source": "./plugins/hackernews/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/hackernews/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/rss/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/rss/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/slack/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/slack/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/jira/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/jira/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/linear/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/linear/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/gitlab/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/gitlab/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/openai/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/openai/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/stripe/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/stripe/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/pagerduty/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/pagerduty/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/datadog/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/datadog/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/sentry/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/sentry/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/net/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/net/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/reddit/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/reddit/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/bluesky/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/bluesky/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/mastodon/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/mastodon/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/dockerhub/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/dockerhub/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/shodan/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/shodan/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/bitbucket/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/bitbucket/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/circleci/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/circleci/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/fly/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/fly/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/digitalocean/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/digitalocean/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/trivy/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/trivy/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/terraform/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/terraform/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/grafana/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/grafana/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/zendesk/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/zendesk/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/confluence/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/confluence/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/hibp/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/hibp/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/finance/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/finance/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/tailscale/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/tailscale/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/auth0/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/auth0/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/newrelic/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/newrelic/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/okta/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/okta/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/linode/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/linode/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/urlscan/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/urlscan/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/twilio/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/twilio/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/trello/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/trello/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/onepassword/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/onepassword/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/fastly/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/fastly/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/heroku/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/heroku/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/mongodbatlas/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/mongodbatlas/src/index.ts",
+      "name": "index"
+    },
+    {
+      "source": "./plugins/azuredevops/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/azuredevops/src/index.ts",
+      "name": "index"
     }
   ]
 }

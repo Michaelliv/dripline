@@ -1,5 +1,5 @@
 import type { DriplinePluginAPI } from "dripline";
-import { syncExec, commandExists } from "dripline";
+import { commandExists, syncExec } from "dripline";
 
 export default function kubectl(dl: DriplinePluginAPI) {
   dl.setName("kubectl");
@@ -11,7 +11,10 @@ export default function kubectl(dl: DriplinePluginAPI) {
     }
   });
 
-  function getQual(ctx: { quals: { column: string; value: any }[] }, name: string): string | undefined {
+  function getQual(
+    ctx: { quals: { column: string; value: any }[] },
+    name: string,
+  ): string | undefined {
     return ctx.quals.find((q) => q.column === name)?.value;
   }
 
@@ -22,7 +25,9 @@ export default function kubectl(dl: DriplinePluginAPI) {
     } else {
       args.push("-A");
     }
-    const { rows: [data] } = syncExec("kubectl", args, { parser: "json" });
+    const {
+      rows: [data],
+    } = syncExec("kubectl", args, { parser: "json" });
     return data?.items ?? [];
   }
 
@@ -40,9 +45,7 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "labels", type: "json" },
       { name: "containers", type: "json" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("pods", ns);
@@ -50,8 +53,12 @@ export default function kubectl(dl: DriplinePluginAPI) {
       for (const p of items) {
         const containerStatuses = p.status?.containerStatuses ?? [];
         const readyCount = containerStatuses.filter((c: any) => c.ready).length;
-        const totalCount = containerStatuses.length || p.spec?.containers?.length || 0;
-        const restarts = containerStatuses.reduce((sum: number, c: any) => sum + (c.restartCount ?? 0), 0);
+        const totalCount =
+          containerStatuses.length || p.spec?.containers?.length || 0;
+        const restarts = containerStatuses.reduce(
+          (sum: number, c: any) => sum + (c.restartCount ?? 0),
+          0,
+        );
 
         yield {
           name: p.metadata?.name ?? "",
@@ -86,9 +93,7 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "selector", type: "json" },
       { name: "created_at", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("services", ns);
@@ -106,7 +111,10 @@ export default function kubectl(dl: DriplinePluginAPI) {
           namespace: s.metadata?.namespace ?? "",
           type: s.spec?.type ?? "",
           cluster_ip: s.spec?.clusterIP ?? "",
-          external_ip: (s.status?.loadBalancer?.ingress ?? []).map((i: any) => i.ip || i.hostname).join(",") || "",
+          external_ip:
+            (s.status?.loadBalancer?.ingress ?? [])
+              .map((i: any) => i.ip || i.hostname)
+              .join(",") || "",
           ports: JSON.stringify(ports),
           selector: JSON.stringify(s.spec?.selector ?? {}),
           created_at: s.metadata?.creationTimestamp ?? "",
@@ -128,9 +136,7 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "labels", type: "json" },
       { name: "created_at", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("deployments", ns);
@@ -172,19 +178,25 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "created_at", type: "datetime" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("kubectl", ["get", "nodes", "-o", "json"], { parser: "json" });
+      const {
+        rows: [data],
+      } = syncExec("kubectl", ["get", "nodes", "-o", "json"], {
+        parser: "json",
+      });
       const items = data?.items ?? [];
 
       for (const n of items) {
         const conditions = n.status?.conditions ?? [];
         const ready = conditions.find((c: any) => c.type === "Ready");
         const labels = n.metadata?.labels ?? {};
-        const roles = Object.keys(labels)
-          .filter((k: string) => k.startsWith("node-role.kubernetes.io/"))
-          .map((k: string) => k.replace("node-role.kubernetes.io/", ""))
-          .join(",") || "worker";
+        const roles =
+          Object.keys(labels)
+            .filter((k: string) => k.startsWith("node-role.kubernetes.io/"))
+            .map((k: string) => k.replace("node-role.kubernetes.io/", ""))
+            .join(",") || "worker";
         const addresses = n.status?.addresses ?? [];
-        const internalIP = addresses.find((a: any) => a.type === "InternalIP")?.address ?? "";
+        const internalIP =
+          addresses.find((a: any) => a.type === "InternalIP")?.address ?? "";
 
         yield {
           name: n.metadata?.name ?? "",
@@ -212,7 +224,11 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "created_at", type: "datetime" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("kubectl", ["get", "namespaces", "-o", "json"], { parser: "json" });
+      const {
+        rows: [data],
+      } = syncExec("kubectl", ["get", "namespaces", "-o", "json"], {
+        parser: "json",
+      });
 
       for (const ns of data?.items ?? []) {
         yield {
@@ -233,9 +249,7 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "data_keys", type: "json" },
       { name: "created_at", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("configmaps", ns);
@@ -260,9 +274,7 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "data_keys", type: "json" },
       { name: "created_at", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("secrets", ns);
@@ -289,15 +301,15 @@ export default function kubectl(dl: DriplinePluginAPI) {
       { name: "rules", type: "json" },
       { name: "created_at", type: "datetime" },
     ],
-    keyColumns: [
-      { name: "namespace", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "namespace", required: "optional", operators: ["="] }],
     *list(ctx) {
       const ns = getQual(ctx, "namespace");
       const items = kubectlGet("ingresses", ns);
 
       for (const i of items) {
-        const hosts = (i.spec?.rules ?? []).map((r: any) => r.host).filter(Boolean);
+        const hosts = (i.spec?.rules ?? [])
+          .map((r: any) => r.host)
+          .filter(Boolean);
 
         yield {
           name: i.metadata?.name ?? "",

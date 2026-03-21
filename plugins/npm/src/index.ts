@@ -1,5 +1,5 @@
 import type { DriplinePluginAPI } from "dripline";
-import { syncExec, commandExists } from "dripline";
+import { commandExists, syncExec } from "dripline";
 
 export default function npm(dl: DriplinePluginAPI) {
   dl.setName("npm");
@@ -12,22 +12,25 @@ export default function npm(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("npm_packages", {
-    description: "Installed npm packages in the current project (or specified directory)",
+    description:
+      "Installed npm packages in the current project (or specified directory)",
     columns: [
       { name: "name", type: "string" },
       { name: "version", type: "string" },
       { name: "type", type: "string" },
       { name: "path", type: "string" },
     ],
-    keyColumns: [
-      { name: "dir", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "dir", required: "optional", operators: ["="] }],
     *list(ctx) {
       const dir = ctx.quals.find((q) => q.column === "dir")?.value;
       const args = ["ls", "--json", "--depth=0", "--long"];
-      const opts = dir ? { parser: "json" as const, cwd: dir } : { parser: "json" as const };
+      const opts = dir
+        ? { parser: "json" as const, cwd: dir }
+        : { parser: "json" as const };
 
-      const { rows: [data] } = syncExec("npm", args, { ...opts, ignoreExitCode: true });
+      const {
+        rows: [data],
+      } = syncExec("npm", args, { ...opts, ignoreExitCode: true });
 
       for (const [name, info] of Object.entries(data?.dependencies ?? {})) {
         const dep = info as any;
@@ -56,13 +59,13 @@ export default function npm(dl: DriplinePluginAPI) {
       { name: "type", type: "string" },
       { name: "location", type: "string" },
     ],
-    keyColumns: [
-      { name: "dir", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "dir", required: "optional", operators: ["="] }],
     *list(ctx) {
       const dir = ctx.quals.find((q) => q.column === "dir")?.value;
       const args = ["outdated", "--json"];
-      const opts = dir ? { parser: "json" as const, cwd: dir } : { parser: "json" as const };
+      const opts = dir
+        ? { parser: "json" as const, cwd: dir }
+        : { parser: "json" as const };
 
       let data: Record<string, any>;
       try {
@@ -94,7 +97,9 @@ export default function npm(dl: DriplinePluginAPI) {
       { name: "path", type: "string" },
     ],
     *list() {
-      const { rows: [data] } = syncExec("npm", ["ls", "--json", "--depth=0", "--global", "--long"], {
+      const {
+        rows: [data],
+      } = syncExec("npm", ["ls", "--json", "--depth=0", "--global", "--long"], {
         parser: "json",
         ignoreExitCode: true,
       });
@@ -116,15 +121,17 @@ export default function npm(dl: DriplinePluginAPI) {
       { name: "name", type: "string" },
       { name: "command", type: "string" },
     ],
-    keyColumns: [
-      { name: "dir", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "dir", required: "optional", operators: ["="] }],
     *list(ctx) {
       const dir = ctx.quals.find((q) => q.column === "dir")?.value;
       const args = ["pkg", "get", "scripts"];
-      const opts = dir ? { parser: "json" as const, cwd: dir } : { parser: "json" as const };
+      const opts = dir
+        ? { parser: "json" as const, cwd: dir }
+        : { parser: "json" as const };
 
-      const { rows: [data] } = syncExec("npm", args, opts);
+      const {
+        rows: [data],
+      } = syncExec("npm", args, opts);
 
       for (const [name, command] of Object.entries(data ?? {})) {
         yield {

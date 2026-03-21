@@ -7,13 +7,19 @@
   "exports": {
     ".": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "npx tsx --test src/**/*.test.ts",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["dripline", "plugin", "github"],
+  "keywords": [
+    "dripline",
+    "plugin",
+    "github"
+  ],
   "license": "MIT",
   "peerDependencies": {
     "dripline": ">=0.2.0"

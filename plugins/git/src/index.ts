@@ -24,11 +24,11 @@ export default function git(dl: DriplinePluginAPI) {
       { name: "body", type: "string" },
       { name: "refs", type: "string" },
     ],
-    keyColumns: [
-      { name: "repo", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "repo", required: "optional", operators: ["="] }],
     *list(ctx) {
-      const format = ["%H", "%h", "%an", "%ae", "%aI", "%s", "%b", "%D"].join(SEP);
+      const format = ["%H", "%h", "%an", "%ae", "%aI", "%s", "%b", "%D"].join(
+        SEP,
+      );
       const limit = ctx.limit ?? 500;
       const { raw } = syncExec(
         "git",
@@ -38,8 +38,26 @@ export default function git(dl: DriplinePluginAPI) {
 
       for (const line of raw.trim().split("\n")) {
         if (!line) continue;
-        const [hash, short_hash, author, author_email, date, subject, body, refs] = line.split(SEP);
-        yield { hash, short_hash, author, author_email, date, subject, body: body?.trim() ?? "", refs: refs ?? "" };
+        const [
+          hash,
+          short_hash,
+          author,
+          author_email,
+          date,
+          subject,
+          body,
+          refs,
+        ] = line.split(SEP);
+        yield {
+          hash,
+          short_hash,
+          author,
+          author_email,
+          date,
+          subject,
+          body: body?.trim() ?? "",
+          refs: refs ?? "",
+        };
       }
     },
   });
@@ -54,11 +72,15 @@ export default function git(dl: DriplinePluginAPI) {
       { name: "upstream", type: "string" },
       { name: "subject", type: "string" },
     ],
-    keyColumns: [
-      { name: "repo", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "repo", required: "optional", operators: ["="] }],
     *list(ctx) {
-      const format = ["%(HEAD)", "%(refname:short)", "%(objectname:short)", "%(upstream:short)", "%(subject)"].join(SEP);
+      const format = [
+        "%(HEAD)",
+        "%(refname:short)",
+        "%(objectname:short)",
+        "%(upstream:short)",
+        "%(subject)",
+      ].join(SEP);
       const { raw } = syncExec(
         "git",
         [...gitArgs(ctx), "branch", "-a", `--format=${format}`],
@@ -90,21 +112,37 @@ export default function git(dl: DriplinePluginAPI) {
       { name: "date", type: "datetime" },
       { name: "subject", type: "string" },
     ],
-    keyColumns: [
-      { name: "repo", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "repo", required: "optional", operators: ["="] }],
     *list(ctx) {
-      const format = ["%(refname:short)", "%(objectname:short)", "%(taggername)", "%(creatordate:iso-strict)", "%(subject)"].join(SEP);
+      const format = [
+        "%(refname:short)",
+        "%(objectname:short)",
+        "%(taggername)",
+        "%(creatordate:iso-strict)",
+        "%(subject)",
+      ].join(SEP);
       const { raw } = syncExec(
         "git",
-        [...gitArgs(ctx), "tag", "-l", `--format=${format}`, "--sort=-creatordate"],
+        [
+          ...gitArgs(ctx),
+          "tag",
+          "-l",
+          `--format=${format}`,
+          "--sort=-creatordate",
+        ],
         { parser: "raw" },
       );
 
       for (const line of raw.trim().split("\n")) {
         if (!line) continue;
         const [name, hash, tagger, date, subject] = line.split(SEP);
-        yield { name, hash: hash ?? "", tagger: tagger ?? "", date: date ?? "", subject: subject ?? "" };
+        yield {
+          name,
+          hash: hash ?? "",
+          tagger: tagger ?? "",
+          date: date ?? "",
+          subject: subject ?? "",
+        };
       }
     },
   });
@@ -116,11 +154,11 @@ export default function git(dl: DriplinePluginAPI) {
       { name: "url", type: "string" },
       { name: "type", type: "string" },
     ],
-    keyColumns: [
-      { name: "repo", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "repo", required: "optional", operators: ["="] }],
     *list(ctx) {
-      const { raw } = syncExec("git", [...gitArgs(ctx), "remote", "-v"], { parser: "raw" });
+      const { raw } = syncExec("git", [...gitArgs(ctx), "remote", "-v"], {
+        parser: "raw",
+      });
 
       for (const line of raw.trim().split("\n")) {
         if (!line) continue;
@@ -140,9 +178,7 @@ export default function git(dl: DriplinePluginAPI) {
       { name: "staged", type: "string" },
       { name: "unstaged", type: "string" },
     ],
-    keyColumns: [
-      { name: "repo", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "repo", required: "optional", operators: ["="] }],
     *list(ctx) {
       const { raw } = syncExec(
         "git",
@@ -151,8 +187,14 @@ export default function git(dl: DriplinePluginAPI) {
       );
 
       const statusMap: Record<string, string> = {
-        M: "modified", A: "added", D: "deleted", R: "renamed",
-        C: "copied", U: "unmerged", "?": "untracked", "!": "ignored",
+        M: "modified",
+        A: "added",
+        D: "deleted",
+        R: "renamed",
+        C: "copied",
+        U: "unmerged",
+        "?": "untracked",
+        "!": "ignored",
       };
 
       for (const line of raw.trim().split("\n")) {
@@ -163,14 +205,18 @@ export default function git(dl: DriplinePluginAPI) {
 
         let status = "unknown";
         if (staged === "?" && unstaged === "?") status = "untracked";
-        else if (staged !== " " && staged !== "?") status = statusMap[staged] ?? "unknown";
+        else if (staged !== " " && staged !== "?")
+          status = statusMap[staged] ?? "unknown";
         else if (unstaged !== " ") status = statusMap[unstaged] ?? "unknown";
 
         yield {
           path,
           status,
-          staged: staged === " " || staged === "?" ? "" : statusMap[staged] ?? staged,
-          unstaged: unstaged === " " ? "" : statusMap[unstaged] ?? unstaged,
+          staged:
+            staged === " " || staged === "?"
+              ? ""
+              : (statusMap[staged] ?? staged),
+          unstaged: unstaged === " " ? "" : (statusMap[unstaged] ?? unstaged),
         };
       }
     },

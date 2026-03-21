@@ -1,13 +1,14 @@
+import { statSync } from "node:fs";
 import type { DriplinePluginAPI } from "dripline";
 import { syncExec } from "dripline";
-import { statSync } from "node:fs";
 
 export default function spotlight(dl: DriplinePluginAPI) {
   dl.setName("spotlight");
   dl.setVersion("0.1.0");
 
   dl.registerTable("spotlight_search", {
-    description: "Search files using macOS Spotlight (mdfind). Use WHERE query = 'search term' or name = '*.ts'",
+    description:
+      "Search files using macOS Spotlight (mdfind). Use WHERE query = 'search term' or name = '*.ts'",
     columns: [
       { name: "path", type: "string" },
       { name: "name", type: "string" },
@@ -23,7 +24,7 @@ export default function spotlight(dl: DriplinePluginAPI) {
       const query = ctx.quals.find((q) => q.column === "query")?.value;
       const name = ctx.quals.find((q) => q.column === "filename")?.value;
       const dir = ctx.quals.find((q) => q.column === "dir")?.value;
-      
+
       if (!query && !name) return;
 
       const args: string[] = [];
@@ -36,7 +37,10 @@ export default function spotlight(dl: DriplinePluginAPI) {
         args.push(query);
       }
 
-      const { raw } = syncExec("mdfind", args, { parser: "raw", timeout: 30000 });
+      const { raw } = syncExec("mdfind", args, {
+        parser: "raw",
+        timeout: 30000,
+      });
       const paths = raw.trim().split("\n").filter(Boolean);
       const limit = ctx.limit ?? 1000;
 
@@ -75,24 +79,30 @@ export default function spotlight(dl: DriplinePluginAPI) {
       { name: "modified_at", type: "datetime" },
     ],
     *list() {
-      const { raw } = syncExec("mdfind", ["kMDItemContentType == 'com.apple.application-bundle'"], {
-        parser: "raw",
-        timeout: 30000,
-      });
+      const { raw } = syncExec(
+        "mdfind",
+        ["kMDItemContentType == 'com.apple.application-bundle'"],
+        {
+          parser: "raw",
+          timeout: 30000,
+        },
+      );
 
       for (const filePath of raw.trim().split("\n").filter(Boolean)) {
         try {
           const stat = statSync(filePath);
-          const name = filePath.split("/").pop()?.replace(/\.app$/, "") ?? "";
+          const name =
+            filePath
+              .split("/")
+              .pop()
+              ?.replace(/\.app$/, "") ?? "";
           yield {
             name,
             path: filePath,
             size_bytes: stat.size,
             modified_at: stat.mtime.toISOString(),
           };
-        } catch {
-          continue;
-        }
+        } catch {}
       }
     },
   });
@@ -113,7 +123,10 @@ export default function spotlight(dl: DriplinePluginAPI) {
     *list(ctx) {
       const dir = ctx.quals.find((q) => q.column === "dir")?.value;
       const kind = ctx.quals.find((q) => q.column === "kind")?.value;
-      const days = parseInt(ctx.quals.find((q) => q.column === "days")?.value ?? "7", 10);
+      const days = parseInt(
+        ctx.quals.find((q) => q.column === "days")?.value ?? "7",
+        10,
+      );
 
       const date = new Date();
       date.setDate(date.getDate() - days);
@@ -139,7 +152,10 @@ export default function spotlight(dl: DriplinePluginAPI) {
       if (dir) args.push("-onlyin", dir);
       args.push(query);
 
-      const { raw } = syncExec("mdfind", args, { parser: "raw", timeout: 30000 });
+      const { raw } = syncExec("mdfind", args, {
+        parser: "raw",
+        timeout: 30000,
+      });
       const limit = ctx.limit ?? 500;
 
       let count = 0;
@@ -154,9 +170,7 @@ export default function spotlight(dl: DriplinePluginAPI) {
             modified_at: stat.mtime.toISOString(),
           };
           count++;
-        } catch {
-          continue;
-        }
+        } catch {}
       }
     },
   });

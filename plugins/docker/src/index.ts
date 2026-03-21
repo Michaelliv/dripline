@@ -1,5 +1,5 @@
 import type { DriplinePluginAPI } from "dripline";
-import { syncExec, commandExists } from "dripline";
+import { commandExists, syncExec } from "dripline";
 
 export default function docker(dl: DriplinePluginAPI) {
   dl.setName("docker");
@@ -7,7 +7,9 @@ export default function docker(dl: DriplinePluginAPI) {
 
   dl.onInit(() => {
     if (!commandExists("docker")) {
-      dl.log.warn("docker not found on PATH — docker tables will be unavailable");
+      dl.log.warn(
+        "docker not found on PATH — docker tables will be unavailable",
+      );
     }
   });
 
@@ -26,9 +28,7 @@ export default function docker(dl: DriplinePluginAPI) {
       { name: "mounts", type: "string" },
       { name: "size", type: "string" },
     ],
-    keyColumns: [
-      { name: "show_all", required: "optional", operators: ["="] },
-    ],
+    keyColumns: [{ name: "show_all", required: "optional", operators: ["="] }],
     *list(ctx) {
       const showAll = ctx.quals.find((q) => q.column === "show_all")?.value;
       const args = ["ps", "--format", "{{json .}}", "--no-trunc"];
@@ -64,9 +64,13 @@ export default function docker(dl: DriplinePluginAPI) {
       { name: "size", type: "string" },
     ],
     *list() {
-      const { rows } = syncExec("docker", ["images", "--format", "{{json .}}", "--no-trunc"], {
-        parser: "jsonlines",
-      });
+      const { rows } = syncExec(
+        "docker",
+        ["images", "--format", "{{json .}}", "--no-trunc"],
+        {
+          parser: "jsonlines",
+        },
+      );
 
       for (const r of rows) {
         yield {
@@ -90,9 +94,13 @@ export default function docker(dl: DriplinePluginAPI) {
       { name: "scope", type: "string" },
     ],
     *list() {
-      const { rows } = syncExec("docker", ["volume", "ls", "--format", "{{json .}}"], {
-        parser: "jsonlines",
-      });
+      const { rows } = syncExec(
+        "docker",
+        ["volume", "ls", "--format", "{{json .}}"],
+        {
+          parser: "jsonlines",
+        },
+      );
 
       for (const r of rows) {
         yield {
@@ -118,9 +126,13 @@ export default function docker(dl: DriplinePluginAPI) {
       { name: "labels", type: "json" },
     ],
     *list() {
-      const { rows } = syncExec("docker", ["network", "ls", "--format", "{{json .}}", "--no-trunc"], {
-        parser: "jsonlines",
-      });
+      const { rows } = syncExec(
+        "docker",
+        ["network", "ls", "--format", "{{json .}}", "--no-trunc"],
+        {
+          parser: "jsonlines",
+        },
+      );
 
       for (const r of rows) {
         yield {
@@ -137,7 +149,9 @@ export default function docker(dl: DriplinePluginAPI) {
   });
 }
 
-function parseLabels(labels: string | Record<string, string>): Record<string, string> {
+function parseLabels(
+  labels: string | Record<string, string>,
+): Record<string, string> {
   if (typeof labels === "object") return labels;
   if (!labels) return {};
   const result: Record<string, string> = {};

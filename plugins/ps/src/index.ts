@@ -24,7 +24,10 @@ export default function ps(dl: DriplinePluginAPI) {
       // Use NUL as delimiter to handle spaces in commands
       const { raw } = syncExec(
         "ps",
-        ["-eo", "pid=,ppid=,user=,pcpu=,pmem=,rss=,vsz=,stat=,lstart=,time=,command="],
+        [
+          "-eo",
+          "pid=,ppid=,user=,pcpu=,pmem=,rss=,vsz=,stat=,lstart=,time=,command=",
+        ],
         { parser: "raw" },
       );
 
@@ -49,13 +52,26 @@ export default function ps(dl: DriplinePluginAPI) {
 
         if (Number.isNaN(pid)) continue;
 
-        yield { pid, ppid, user, cpu, mem, rss_kb: rss, vsz_kb: vsz, stat, started, time, command };
+        yield {
+          pid,
+          ppid,
+          user,
+          cpu,
+          mem,
+          rss_kb: rss,
+          vsz_kb: vsz,
+          stat,
+          started,
+          time,
+          command,
+        };
       }
     },
   });
 
   dl.registerTable("ps_ports", {
-    description: "Processes listening on network ports (requires sudo for full results)",
+    description:
+      "Processes listening on network ports (requires sudo for full results)",
     columns: [
       { name: "command", type: "string" },
       { name: "pid", type: "number" },

@@ -1,8 +1,8 @@
-import type { DriplinePluginAPI } from "dripline";
-import { syncExec, commandExists } from "dripline";
-import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { basename, join } from "node:path";
+import type { DriplinePluginAPI } from "dripline";
+import { commandExists, syncExec } from "dripline";
 
 interface SessionRecord {
   type: string;
@@ -53,7 +53,11 @@ function readSessionFile(filePath: string): SessionRecord[] {
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        try { return JSON.parse(line); } catch { return null; }
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
       })
       .filter(Boolean) as SessionRecord[];
   } catch {
@@ -61,7 +65,12 @@ function readSessionFile(filePath: string): SessionRecord[] {
   }
 }
 
-function* iterateSessions(): Generator<{ dir: string; file: string; filePath: string; project: string }> {
+function* iterateSessions(): Generator<{
+  dir: string;
+  file: string;
+  filePath: string;
+  project: string;
+}> {
   const sessionsDir = getSessionsDir();
   if (!existsSync(sessionsDir)) return;
 
@@ -105,7 +114,9 @@ export default function pi(dl: DriplinePluginAPI) {
 
         const sessionRec = records.find((r) => r.type === "session");
         const modelChange = records.find((r) => r.type === "model_change");
-        const thinkingChange = records.find((r) => r.type === "thinking_level_change");
+        const thinkingChange = records.find(
+          (r) => r.type === "thinking_level_change",
+        );
 
         let messageCount = 0;
         let userMessages = 0;
@@ -125,7 +136,9 @@ export default function pi(dl: DriplinePluginAPI) {
             totalCost += rec.message?.usage?.cost?.total ?? 0;
             const content = rec.message?.content ?? [];
             if (Array.isArray(content)) {
-              toolCalls += content.filter((c: any) => c.type === "toolCall").length;
+              toolCalls += content.filter(
+                (c: any) => c.type === "toolCall",
+              ).length;
             }
           }
         }
@@ -196,14 +209,21 @@ export default function pi(dl: DriplinePluginAPI) {
             project,
             message_id: rec.id ?? "",
             role,
-            timestamp: rec.timestamp ?? (msg as any).timestamp ? new Date((msg as any).timestamp ?? rec.timestamp ?? 0).toISOString() : "",
+            timestamp:
+              (rec.timestamp ?? (msg as any).timestamp)
+                ? new Date(
+                    (msg as any).timestamp ?? rec.timestamp ?? 0,
+                  ).toISOString()
+                : "",
             model: (msg as any).model ?? "",
             provider: (msg as any).provider ?? "",
             text,
             input_tokens: msg.usage?.input ?? null,
             output_tokens: msg.usage?.output ?? null,
             total_tokens: msg.usage?.totalTokens ?? null,
-            cost: msg.usage?.cost?.total ? Math.round(msg.usage.cost.total * 10000) / 10000 : null,
+            cost: msg.usage?.cost?.total
+              ? Math.round(msg.usage.cost.total * 10000) / 10000
+              : null,
             stop_reason: (msg as any).stopReason ?? "",
           };
         }
@@ -331,7 +351,8 @@ export default function pi(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("pi_prompt", {
-    description: "Send a prompt to pi and get a response. Use WHERE prompt = 'your question'",
+    description:
+      "Send a prompt to pi and get a response. Use WHERE prompt = 'your question'",
     columns: [
       { name: "prompt", type: "string" },
       { name: "response", type: "string" },
@@ -365,10 +386,9 @@ export default function pi(dl: DriplinePluginAPI) {
   });
 
   dl.registerTable("pi_generate", {
-    description: "Generate structured data with pi. Use WHERE prompt = 'description' AND columns = 'name:string,age:number'",
-    columns: [
-      { name: "data", type: "json" },
-    ],
+    description:
+      "Generate structured data with pi. Use WHERE prompt = 'description' AND columns = 'name:string,age:number'",
+    columns: [{ name: "data", type: "json" }],
     keyColumns: [
       { name: "prompt", required: "required", operators: ["="] },
       { name: "model", required: "optional", operators: ["="] },
@@ -381,7 +401,8 @@ export default function pi(dl: DriplinePluginAPI) {
       const model = ctx.quals.find((q) => q.column === "model")?.value;
       const provider = ctx.quals.find((q) => q.column === "provider")?.value;
 
-      const systemPrompt = "You are a data generator. Return ONLY a JSON array of objects. No markdown fences, no explanation, no extra text. Just the raw JSON array.";
+      const systemPrompt =
+        "You are a data generator. Return ONLY a JSON array of objects. No markdown fences, no explanation, no extra text. Just the raw JSON array.";
       const args = buildPiArgs({ model, provider, systemPrompt });
       args.push(prompt);
 
@@ -397,7 +418,11 @@ export default function pi(dl: DriplinePluginAPI) {
         // Try to find JSON array in the response
         const match = trimmed.match(/\[[\s\S]*\]/);
         if (match) {
-          try { parsed = JSON.parse(match[0]); } catch { parsed = [{ data: trimmed }]; }
+          try {
+            parsed = JSON.parse(match[0]);
+          } catch {
+            parsed = [{ data: trimmed }];
+          }
         } else {
           parsed = [{ data: trimmed }];
         }
@@ -410,8 +435,21 @@ export default function pi(dl: DriplinePluginAPI) {
   });
 }
 
-function buildPiArgs(opts: { model?: string; provider?: string; systemPrompt?: string }): string[] {
-  const args = ["-p", "--mode", "text", "--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"];
+function buildPiArgs(opts: {
+  model?: string;
+  provider?: string;
+  systemPrompt?: string;
+}): string[] {
+  const args = [
+    "-p",
+    "--mode",
+    "text",
+    "--no-tools",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-session",
+  ];
   if (opts.model) args.push("--model", opts.model);
   if (opts.provider) args.push("--provider", opts.provider);
   if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);

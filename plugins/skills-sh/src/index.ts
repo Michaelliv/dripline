@@ -8,7 +8,8 @@ export default function skillsSh(dl: DriplinePluginAPI) {
   dl.setVersion("0.1.0");
 
   dl.registerTable("skills_search", {
-    description: "Search AI agent skills on skills.sh. Use WHERE query = 'search term'",
+    description:
+      "Search AI agent skills on skills.sh. Use WHERE query = 'search term'",
     columns: [
       { name: "id", type: "string" },
       { name: "skill_id", type: "string" },
@@ -24,7 +25,8 @@ export default function skillsSh(dl: DriplinePluginAPI) {
       const query = ctx.quals.find((q) => q.column === "query")?.value;
       if (!query || query.length < 2) return;
 
-      const limit = ctx.quals.find((q) => q.column === "search_limit")?.value ?? "50";
+      const limit =
+        ctx.quals.find((q) => q.column === "search_limit")?.value ?? "50";
       const url = `${API}/search?q=${encodeURIComponent(query)}&limit=${limit}`;
 
       const resp = syncGet(url);

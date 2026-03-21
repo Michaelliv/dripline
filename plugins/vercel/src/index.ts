@@ -1,8 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { DriplinePluginAPI } from "dripline";
 import { syncGet } from "dripline";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 
 const API = "https://api.vercel.com";
 
@@ -10,27 +10,49 @@ function getToken(): string | null {
   if (process.env.VERCEL_TOKEN) return process.env.VERCEL_TOKEN;
 
   // macOS
-  const macPath = join(homedir(), "Library", "Application Support", "com.vercel.cli", "auth.json");
+  const macPath = join(
+    homedir(),
+    "Library",
+    "Application Support",
+    "com.vercel.cli",
+    "auth.json",
+  );
   if (existsSync(macPath)) {
     try {
       return JSON.parse(readFileSync(macPath, "utf-8")).token;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // Linux / XDG
-  const xdgPath = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "com.vercel.cli", "auth.json");
+  const xdgPath = join(
+    process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
+    "com.vercel.cli",
+    "auth.json",
+  );
   if (existsSync(xdgPath)) {
     try {
       return JSON.parse(readFileSync(xdgPath, "utf-8")).token;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // Legacy
-  const legacyPath = join(homedir(), ".local", "share", "com.vercel.cli", "auth.json");
+  const legacyPath = join(
+    homedir(),
+    ".local",
+    "share",
+    "com.vercel.cli",
+    "auth.json",
+  );
   if (existsSync(legacyPath)) {
     try {
       return JSON.parse(readFileSync(legacyPath, "utf-8")).token;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   return null;
@@ -51,7 +73,10 @@ export default function vercel(dl: DriplinePluginAPI) {
 
   function vGet(path: string): any {
     const token = getToken();
-    if (!token) { dl.log.warn("No Vercel auth found"); return null; }
+    if (!token) {
+      dl.log.warn("No Vercel auth found");
+      return null;
+    }
 
     const resp = syncGet(`${API}${path}`, {
       Authorization: `Bearer ${token}`,
@@ -104,13 +129,17 @@ export default function vercel(dl: DriplinePluginAPI) {
       { name: "project_name", required: "optional", operators: ["="] },
     ],
     *list(ctx) {
-      const projectName = ctx.quals.find((q) => q.column === "project_name")?.value;
+      const projectName = ctx.quals.find(
+        (q) => q.column === "project_name",
+      )?.value;
       const limit = ctx.limit ?? 20;
       let path = `/v6/deployments?limit=${limit}`;
       if (projectName) {
         // Get project ID first
         const projects = vGet("/v9/projects?limit=100");
-        const project = (projects?.projects ?? []).find((p: any) => p.name === projectName);
+        const project = (projects?.projects ?? []).find(
+          (p: any) => p.name === projectName,
+        );
         if (project) path += `&projectId=${project.id}`;
       }
 
@@ -128,7 +157,8 @@ export default function vercel(dl: DriplinePluginAPI) {
           source: d.source ?? "",
           git_branch: meta.githubCommitRef ?? meta.gitlabCommitRef ?? "",
           git_commit_sha: meta.githubCommitSha ?? meta.gitlabCommitSha ?? "",
-          git_commit_message: meta.githubCommitMessage ?? meta.gitlabCommitMessage ?? "",
+          git_commit_message:
+            meta.githubCommitMessage ?? meta.gitlabCommitMessage ?? "",
         };
       }
     },
@@ -151,18 +181,23 @@ export default function vercel(dl: DriplinePluginAPI) {
         yield {
           name: d.name ?? "",
           verified: d.verified ? 1 : 0,
-          nameservers: JSON.stringify(d.intendedNameservers ?? d.nameservers ?? []),
+          nameservers: JSON.stringify(
+            d.intendedNameservers ?? d.nameservers ?? [],
+          ),
           bought_at: d.boughtAt ? new Date(d.boughtAt).toISOString() : "",
           created_at: d.createdAt ? new Date(d.createdAt).toISOString() : "",
           expires_at: d.expiresAt ? new Date(d.expiresAt).toISOString() : "",
-          transferred_at: d.transferredAt ? new Date(d.transferredAt).toISOString() : "",
+          transferred_at: d.transferredAt
+            ? new Date(d.transferredAt).toISOString()
+            : "",
         };
       }
     },
   });
 
   dl.registerTable("vercel_env_vars", {
-    description: "Environment variables for a project. Use WHERE project_name = '...'",
+    description:
+      "Environment variables for a project. Use WHERE project_name = '...'",
     columns: [
       { name: "key", type: "string" },
       { name: "target", type: "json" },
@@ -174,7 +209,9 @@ export default function vercel(dl: DriplinePluginAPI) {
       { name: "project_name", required: "required", operators: ["="] },
     ],
     *list(ctx) {
-      const projectName = ctx.quals.find((q) => q.column === "project_name")?.value;
+      const projectName = ctx.quals.find(
+        (q) => q.column === "project_name",
+      )?.value;
       if (!projectName) return;
 
       const data = vGet(`/v9/projects/${projectName}/env`);
