@@ -1,0 +1,191 @@
+{
+  "auth0": {
+    "light": "https://svgl.app/library/auth0.svg",
+    "dark": "https://cdn.simpleicons.org/auth0/white"
+  },
+  "azuredevops": {
+    "light": "https://svgl.app/library/azure.svg"
+  },
+  "bitbucket": {
+    "light": "https://cdn.simpleicons.org/bitbucket",
+    "dark": "https://cdn.simpleicons.org/bitbucket/white"
+  },
+  "bluesky": {
+    "light": "https://svgl.app/library/bluesky.svg"
+  },
+  "brew": {
+    "light": "https://svgl.app/library/homebrew.svg"
+  },
+  "circleci": {
+    "light": "https://cdn.simpleicons.org/circleci",
+    "dark": "https://cdn.simpleicons.org/circleci/white"
+  },
+  "cloudflare": {
+    "light": "https://svgl.app/library/cloudflare.svg"
+  },
+  "confluence": {
+    "light": "https://svgl.app/library/atlassian.svg"
+  },
+  "datadog": {
+    "light": "https://svgl.app/library/datadog.svg"
+  },
+  "digitalocean": {
+    "light": "https://cdn.simpleicons.org/digitalocean",
+    "dark": "https://cdn.simpleicons.org/digitalocean/white"
+  },
+  "docker": {
+    "light": "https://svgl.app/library/docker.svg"
+  },
+  "dockerhub": {
+    "light": "https://svgl.app/library/docker.svg"
+  },
+  "fastly": {
+    "light": "https://cdn.simpleicons.org/fastly",
+    "dark": "https://cdn.simpleicons.org/fastly/white"
+  },
+  "fly": {
+    "light": "https://cdn.simpleicons.org/flydotio",
+    "dark": "https://cdn.simpleicons.org/flydotio/white"
+  },
+  "git": {
+    "light": "https://svgl.app/library/git.svg"
+  },
+  "github": {
+    "light": "https://svgl.app/library/github_light.svg",
+    "dark": "https://svgl.app/library/github_dark.svg"
+  },
+  "gitlab": {
+    "light": "https://svgl.app/library/gitlab.svg"
+  },
+  "grafana": {
+    "light": "https://svgl.app/library/grafana.svg"
+  },
+  "hackernews": {
+    "light": "https://cdn.simpleicons.org/ycombinator",
+    "dark": "https://cdn.simpleicons.org/ycombinator/white"
+  },
+  "heroku": {
+    "light": "https://svgl.app/library/heroku.svg"
+  },
+  "jira": {
+    "light": "https://cdn.simpleicons.org/jira",
+    "dark": "https://cdn.simpleicons.org/jira/white"
+  },
+  "kubectl": {
+    "light": "https://svgl.app/library/kubernetes.svg"
+  },
+  "linear": {
+    "light": "https://svgl.app/library/linear.svg",
+    "dark": "https://cdn.simpleicons.org/linear/white"
+  },
+  "linode": {
+    "light": "https://cdn.simpleicons.org/akamai",
+    "dark": "https://cdn.simpleicons.org/akamai/white"
+  },
+  "mastodon": {
+    "light": "https://svgl.app/library/mastodon.svg",
+    "dark": "https://cdn.simpleicons.org/mastodon/white"
+  },
+  "mongodbatlas": {
+    "light": "https://svgl.app/library/mongodb-icon-light.svg",
+    "dark": "https://svgl.app/library/mongodb-icon-dark.svg"
+  },
+  "newrelic": {
+    "light": "https://cdn.simpleicons.org/newrelic",
+    "dark": "https://cdn.simpleicons.org/newrelic/white"
+  },
+  "npm": {
+    "light": "https://svgl.app/library/npm.svg"
+  },
+  "okta": {
+    "light": "https://cdn.simpleicons.org/okta",
+    "dark": "https://cdn.simpleicons.org/okta/white"
+  },
+  "onepassword": {
+    "light": "https://svgl.app/library/1password-light.svg",
+    "dark": "https://svgl.app/library/1password-dark.svg"
+  },
+  "openai": {
+    "light": "https://svgl.app/library/openai.svg",
+    "dark": "https://svgl.app/library/openai_dark.svg"
+  },
+  "pagerduty": {
+    "light": "https://cdn.simpleicons.org/pagerduty",
+    "dark": "https://cdn.simpleicons.org/pagerduty/white"
+  },
+  "reddit": {
+    "light": "https://svgl.app/library/reddit.svg"
+  },
+  "rss": {
+    "light": "https://cdn.simpleicons.org/rss",
+    "dark": "https://cdn.simpleicons.org/rss/white"
+  },
+  "sentry": {
+    "light": "https://svgl.app/library/sentry.svg",
+    "dark": "https://cdn.simpleicons.org/sentry/white"
+  },
+  "slack": {
+    "light": "https://svgl.app/library/slack.svg"
+  },
+  "spotlight": {
+    "light": "https://svgl.app/library/apple.svg",
+    "dark": "https://svgl.app/library/apple_dark.svg"
+  },
+  "stripe": {
+    "light": "https://svgl.app/library/stripe.svg",
+    "dark": "https://cdn.simpleicons.org/stripe/white"
+  },
+  "svgl": {
+    "light": "https://svgl.app/library/svgl.svg"
+  },
+  "system-profiler": {
+    "light": "https://svgl.app/library/apple.svg",
+    "dark": "https://svgl.app/library/apple_dark.svg"
+  },
+  "tailscale": {
+    "light": "https://cdn.simpleicons.org/tailscale",
+    "dark": "https://cdn.simpleicons.org/tailscale/white"
+  },
+  "terraform": {
+    "light": "https://svgl.app/library/terraform.svg"
+  },
+  "trello": {
+    "light": "https://cdn.simpleicons.org/trello",
+    "dark": "https://cdn.simpleicons.org/trello/white"
+  },
+  "trivy": {
+    "light": "https://cdn.simpleicons.org/trivy",
+    "dark": "https://cdn.simpleicons.org/trivy/white"
+  },
+  "twilio": {
+    "light": "https://svgl.app/library/twilio.svg"
+  },
+  "urlscan": {},
+  "vercel": {
+    "light": "https://svgl.app/library/vercel.svg",
+    "dark": "https://svgl.app/library/vercel_dark.svg"
+  },
+  "zendesk": {
+    "light": "https://cdn.simpleicons.org/zendesk",
+    "dark": "https://cdn.simpleicons.org/zendesk/white"
+  },
+  "finance": {
+    "light": "https://cdn.simpleicons.org/tradingview",
+    "dark": "https://cdn.simpleicons.org/tradingview/white"
+  },
+  "hibp": {
+    "light": "https://cdn.simpleicons.org/haveibeenpwned",
+    "dark": "https://cdn.simpleicons.org/haveibeenpwned/white"
+  },
+  "net": {
+    "light": "https://cdn.simpleicons.org/curl",
+    "dark": "https://cdn.simpleicons.org/curl/white"
+  },
+  "pi": {},
+  "ps": {
+    "light": "https://cdn.simpleicons.org/gnometerminal",
+    "dark": "https://cdn.simpleicons.org/gnometerminal/white"
+  },
+  "shodan": {},
+  "skills-sh": {}
+}

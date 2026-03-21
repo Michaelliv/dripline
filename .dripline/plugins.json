@@ -269,6 +269,11 @@
       "source": "./plugins/azuredevops/src/index.ts",
       "path": "/Users/michaelliv/Projects/dripline/plugins/azuredevops/src/index.ts",
       "name": "index"
+    },
+    {
+      "source": "./plugins/svgl/src/index.ts",
+      "path": "/Users/michaelliv/Projects/dripline/plugins/svgl/src/index.ts",
+      "name": "index"
     }
   ]
 }

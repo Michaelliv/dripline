@@ -1,0 +1,70 @@
+name: Catalog
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps
+      - run: npm install -g tsx
+      - run: npm run build
+      - name: Create self-symlink for plugins
+        run: ln -sf .. node_modules/dripline
+      - name: Install all plugins
+        run: |
+          npx tsx src/main.ts init 2>/dev/null || true
+          for p in plugins/*/src/index.ts; do
+            name=$(echo "$p" | cut -d/ -f2)
+            npx tsx src/main.ts plugin install "./$p" 2>/dev/null && echo "✓ $name" || echo "✗ $name (skipped)"
+          done
+      - name: Generate catalog data
+        run: |
+          npx tsx src/main.ts tables --json 2>/dev/null | sed -n '/^\[/,$ p' > /tmp/tables.json
+          node -e "
+            const tables = require('/tmp/tables.json');
+            const icons = require('./plugins/icons.json');
+            const plugins = {};
+            for (const t of tables) {
+              const p = t.plugin;
+              if (!plugins[p]) plugins[p] = {name: p, tables: [], icon: icons[p] || {}};
+              plugins[p].tables.push({
+                name: t.table,
+                description: t.description || '',
+                columns: (t.columns || []).map(c => ({name: c.name, type: c.type}))
+              });
+            }
+            const catalog = Object.values(plugins).sort((a,b) => a.name.localeCompare(b.name));
+            console.log('const CATALOG = ' + JSON.stringify(catalog) + ';');
+            console.log('const TOTAL_PLUGINS = ' + catalog.length + ';');
+            console.log('const TOTAL_TABLES = ' + tables.length + ';');
+          " > docs/catalog-data.js
+          echo "Generated catalog: $(wc -c < docs/catalog-data.js) bytes"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
