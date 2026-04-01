@@ -105,18 +105,28 @@ export class QueryEngine {
     return applyEnvOverrides(connection, schema);
   }
 
-  private extractQuals(sql: string, keyColNames: string[]): Qual[] {
+  private extractQuals(
+    sql: string,
+    allColumns: string[],
+    keyColNames: string[],
+  ): Qual[] {
     const quals: Qual[] = [];
-    for (const col of keyColNames) {
-      const patterns = [
-        new RegExp(`${col}\\s*=\\s*'([^']*)'`, "i"),
-        new RegExp(`${col}\\s*=\\s*"([^"]*)"`, "i"),
-        new RegExp(`${col}\\s*=\\s*(\\d+)`, "i"),
-      ];
+    const keySet = new Set(keyColNames);
+    for (const col of allColumns) {
+      const singleQuote = new RegExp(`${col}\\s*=\\s*'((?:[^']|'')*)'`, "i");
+      const doubleQuote = new RegExp(`${col}\\s*=\\s*"([^"]*)"`, "i");
+      const numeric = new RegExp(`${col}\\s*=\\s*(\\d+)`, "i");
+      const patterns = [singleQuote, doubleQuote, numeric];
       for (const p of patterns) {
         const m = sql.match(p);
         if (m) {
-          quals.push({ column: col, operator: "=", value: m[1] });
+          const value = p === singleQuote ? m[1].replace(/''/g, "'") : m[1];
+          quals.push({
+            column: col,
+            operator: "=",
+            value,
+            isKeyColumn: keySet.has(col),
+          });
           break;
         }
       }
@@ -214,7 +224,7 @@ export class QueryEngine {
     }
 
     for (const reg of referencedTables) {
-      const quals = this.extractQuals(sql, reg.keyColNames);
+      const quals = this.extractQuals(sql, reg.allColumns, reg.keyColNames);
       await this.populateTable(reg, quals);
     }
 

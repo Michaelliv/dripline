@@ -98,6 +98,52 @@ describe("QueryEngine", () => {
     assert.equal(lastCtx.quals[0].value, "admin");
   });
 
+  it("handles SQL-escaped single quotes in qual values", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE role = 'it''s admin'");
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].column, "role");
+    assert.equal(lastCtx.quals[0].value, "it's admin");
+  });
+
+  it("handles trailing escaped quotes in qual values", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE role = '''admin'''");
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].value, "'admin'");
+  });
+
+  it("key column quals are marked with isKeyColumn", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE role = 'admin'");
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].isKeyColumn, true);
+  });
+
+  it("non-key column quals are extracted and passed to plugin", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE name = 'Alice'");
+    assert.ok(lastCtx);
+    const nameQual = lastCtx.quals.find((q) => q.column === "name");
+    assert.ok(nameQual);
+    assert.equal(nameQual.value, "Alice");
+    assert.equal(nameQual.isKeyColumn, false);
+  });
+
+  it("mixed key and non-key quals are both extracted", async () => {
+    await setup();
+    await engine.query(
+      "SELECT * FROM users WHERE role = 'admin' AND name = 'Alice'",
+    );
+    assert.ok(lastCtx);
+    const roleQual = lastCtx.quals.find((q) => q.column === "role");
+    const nameQual = lastCtx.quals.find((q) => q.column === "name");
+    assert.ok(roleQual);
+    assert.ok(nameQual);
+    assert.equal(roleQual.isKeyColumn, true);
+    assert.equal(nameQual.isKeyColumn, false);
+  });
+
   it("non-key WHERE filtered by DuckDB", async () => {
     await setup();
     const rows = await engine.query("SELECT * FROM users WHERE name = 'Alice'");
