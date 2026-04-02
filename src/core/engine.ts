@@ -214,22 +214,25 @@ export class QueryEngine {
     if (rows.length === 0) return;
 
     const cols = reg.allColumns;
-    const placeholders = cols.map(() => "?").join(", ");
-    const insertSql = `INSERT INTO "${table.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${placeholders})`;
-
     const qualMap: Record<string, any> = {};
     for (const q of quals) {
       qualMap[q.column] = q.value;
     }
 
-    for (const row of rows) {
-      const values = cols.map((c) => {
-        const v = row[c] ?? qualMap[c];
-        if (v === undefined || v === null) return null;
-        if (typeof v === "object") return JSON.stringify(v);
-        return v;
-      });
-      await this.db.run(insertSql, ...values);
+    const BATCH_SIZE = 1000;
+    const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const batchSql = `INSERT INTO "${table.name}" (${cols.map((c) => `"${c}"`).join(", ")}) VALUES ${batch.map(() => rowPlaceholder).join(", ")}`;
+      const allValues = batch.flatMap((row) =>
+        cols.map((c) => {
+          const v = row[c] ?? qualMap[c];
+          if (v === undefined || v === null) return null;
+          if (typeof v === "object") return JSON.stringify(v);
+          return v;
+        }),
+      );
+      await this.db.run(batchSql, ...allValues);
     }
   }
 

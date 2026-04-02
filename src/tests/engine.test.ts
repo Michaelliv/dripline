@@ -201,6 +201,30 @@ describe("QueryEngine", () => {
     assert.equal((rows[0] as any).name, "Alice");
   });
 
+  it("batch insert handles more than 1000 rows", async () => {
+    const bigPlugin: PluginDef = {
+      name: "big",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "big_table",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "val", type: "string" },
+          ],
+          *list() {
+            for (let i = 0; i < 2500; i++) {
+              yield { id: i, val: `row-${i}` };
+            }
+          },
+        },
+      ],
+    };
+    await setup({ plugins: [bigPlugin] });
+    const rows = await engine.query("SELECT COUNT(*) as cnt FROM big_table");
+    assert.equal((rows[0] as any).cnt, 2500);
+  });
+
   it("cache prevents second plugin call", async () => {
     await setup();
     await engine.query("SELECT * FROM users");
