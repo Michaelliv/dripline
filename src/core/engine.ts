@@ -105,6 +105,8 @@ export class QueryEngine {
     return applyEnvOverrides(connection, schema);
   }
 
+  private static readonly OPERATORS = [">=", "<=", "!=", ">", "<", "="];
+
   private extractQuals(
     sql: string,
     allColumns: string[],
@@ -113,22 +115,38 @@ export class QueryEngine {
     const quals: Qual[] = [];
     const keySet = new Set(keyColNames);
     for (const col of allColumns) {
-      const singleQuote = new RegExp(`${col}\\s*=\\s*'((?:[^']|'')*)'`, "i");
-      const doubleQuote = new RegExp(`${col}\\s*=\\s*"([^"]*)"`, "i");
-      const numeric = new RegExp(`${col}\\s*=\\s*(\\d+)`, "i");
-      const patterns = [singleQuote, doubleQuote, numeric];
-      for (const p of patterns) {
-        const m = sql.match(p);
-        if (m) {
-          const value = p === singleQuote ? m[1].replace(/''/g, "'") : m[1];
-          quals.push({
-            column: col,
-            operator: "=",
-            value,
-            isKeyColumn: keySet.has(col),
-          });
-          break;
+      let matched = false;
+      for (const op of QueryEngine.OPERATORS) {
+        const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const singleQuote = new RegExp(
+          `${col}\\s*${escapedOp}\\s*'((?:[^']|'')*)'`,
+          "i",
+        );
+        const doubleQuote = new RegExp(
+          `${col}\\s*${escapedOp}\\s*"([^"]*)"`,
+          "i",
+        );
+        const numeric = new RegExp(
+          `${col}\\s*${escapedOp}\\s*(\\d+)`,
+          "i",
+        );
+        const patterns = [singleQuote, doubleQuote, numeric];
+        for (const p of patterns) {
+          const m = sql.match(p);
+          if (m) {
+            const value =
+              p === singleQuote ? m[1].replace(/''/g, "'") : m[1];
+            quals.push({
+              column: col,
+              operator: op,
+              value,
+              isKeyColumn: keySet.has(col),
+            });
+            matched = true;
+            break;
+          }
         }
+        if (matched) break;
       }
     }
     return quals;

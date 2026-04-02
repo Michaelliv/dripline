@@ -144,6 +144,56 @@ describe("QueryEngine", () => {
     assert.equal(nameQual.isKeyColumn, false);
   });
 
+  it("extracts >= operator from quals", async () => {
+    await setup();
+    await engine.query(
+      "SELECT * FROM users WHERE role >= 'admin'",
+    );
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].operator, ">=");
+    assert.equal(lastCtx.quals[0].value, "admin");
+  });
+
+  it("extracts <= operator from quals", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE role <= 'z'");
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].operator, "<=");
+    assert.equal(lastCtx.quals[0].value, "z");
+  });
+
+  it("extracts > and < operators from quals", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE id > 5");
+    assert.ok(lastCtx);
+    const idQual = lastCtx.quals.find((q) => q.column === "id");
+    assert.ok(idQual);
+    assert.equal(idQual.operator, ">");
+    assert.equal(idQual.value, "5");
+  });
+
+  it("extracts != operator from quals", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE role != 'admin'");
+    assert.ok(lastCtx);
+    assert.equal(lastCtx.quals[0].operator, "!=");
+    assert.equal(lastCtx.quals[0].value, "admin");
+  });
+
+  it("distinguishes >= from = correctly", async () => {
+    await setup();
+    await engine.query(
+      "SELECT * FROM users WHERE role = 'admin' AND name >= 'B'",
+    );
+    assert.ok(lastCtx);
+    const roleQual = lastCtx.quals.find((q) => q.column === "role");
+    const nameQual = lastCtx.quals.find((q) => q.column === "name");
+    assert.ok(roleQual);
+    assert.ok(nameQual);
+    assert.equal(roleQual.operator, "=");
+    assert.equal(nameQual.operator, ">=");
+  });
+
   it("non-key WHERE filtered by DuckDB", async () => {
     await setup();
     const rows = await engine.query("SELECT * FROM users WHERE name = 'Alice'");
