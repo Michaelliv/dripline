@@ -192,7 +192,7 @@ describe("QueryEngine", () => {
     assert.equal(lastCtx.quals[0].value, "%admin%");
   });
 
-  it("extracts key column quals alongside non-key WHERE clauses", async () => {
+  it("extracts both key and non-key column quals", async () => {
     await setup();
     await engine.query(
       "SELECT * FROM users WHERE role = 'admin' AND name = 'Alice'",
@@ -202,9 +202,21 @@ describe("QueryEngine", () => {
     assert.ok(roleQual);
     assert.equal(roleQual.operator, "=");
     assert.equal(roleQual.value, "admin");
-    // name is not a key column, so it shouldn't be in quals
+    assert.equal(roleQual.isKeyColumn, true);
     const nameQual = lastCtx.quals.find((q: any) => q.column === "name");
-    assert.equal(nameQual, undefined);
+    assert.ok(nameQual);
+    assert.equal(nameQual.value, "Alice");
+    assert.equal(nameQual.isKeyColumn, false);
+  });
+
+  it("non-key column qual extracted on its own", async () => {
+    await setup();
+    await engine.query("SELECT * FROM users WHERE name = 'Bob'");
+    assert.ok(lastCtx);
+    const nameQual = lastCtx.quals.find((q: any) => q.column === "name");
+    assert.ok(nameQual);
+    assert.equal(nameQual.value, "Bob");
+    assert.equal(nameQual.isKeyColumn, false);
   });
 
   it("non-key WHERE filtered by DuckDB", async () => {

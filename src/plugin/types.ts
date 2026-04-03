@@ -17,6 +17,7 @@ export interface Qual {
   column: string;
   operator: string;
   value: any;
+  isKeyColumn?: boolean;
 }
 
 export interface ConnectionConfig {

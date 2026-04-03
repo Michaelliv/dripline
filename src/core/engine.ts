@@ -126,6 +126,7 @@ export class QueryEngine {
 
   private async extractQuals(
     sql: string,
+    allColumns: string[],
     keyColNames: string[],
   ): Promise<Qual[]> {
     const escaped = sql.replace(/'/g, "''");
@@ -135,6 +136,7 @@ export class QueryEngine {
     const ast = JSON.parse(result[0].ast);
     if (ast.error || !ast.statements?.[0]?.node?.where_clause) return [];
 
+    const colSet = new Set(allColumns);
     const keySet = new Set(keyColNames);
     const quals: Qual[] = [];
 
@@ -162,11 +164,12 @@ export class QueryEngine {
       if (node.class === "COMPARISON") {
         const op = QueryEngine.COMPARISON_MAP[node.type];
         const colName = node.left?.column_names?.[0];
-        if (op && colName && keySet.has(colName)) {
+        if (op && colName && colSet.has(colName)) {
           quals.push({
             column: colName,
             operator: op,
             value: extractValue(node.right?.value),
+            isKeyColumn: keySet.has(colName),
           });
         }
         return;
@@ -175,11 +178,12 @@ export class QueryEngine {
       // BETWEEN: col BETWEEN lower AND upper
       if (node.class === "BETWEEN") {
         const colName = node.input?.column_names?.[0];
-        if (colName && keySet.has(colName)) {
+        if (colName && colSet.has(colName)) {
           quals.push({
             column: colName,
             operator: "BETWEEN",
             value: [extractValue(node.lower?.value), extractValue(node.upper?.value)],
+            isKeyColumn: keySet.has(colName),
           });
         }
         return;
@@ -188,12 +192,13 @@ export class QueryEngine {
       // IN / NOT IN: first child is column, rest are values
       if (node.type === "COMPARE_IN" || node.type === "COMPARE_NOT_IN") {
         const colName = node.children?.[0]?.column_names?.[0];
-        if (colName && keySet.has(colName)) {
+        if (colName && colSet.has(colName)) {
           const values = node.children.slice(1).map((c: any) => extractValue(c.value));
           quals.push({
             column: colName,
             operator: node.type === "COMPARE_IN" ? "IN" : "NOT IN",
             value: values,
+            isKeyColumn: keySet.has(colName),
           });
         }
         return;
@@ -202,11 +207,12 @@ export class QueryEngine {
       // IS NULL / IS NOT NULL
       if (node.type === "OPERATOR_IS_NULL" || node.type === "OPERATOR_IS_NOT_NULL") {
         const colName = node.children?.[0]?.column_names?.[0];
-        if (colName && keySet.has(colName)) {
+        if (colName && colSet.has(colName)) {
           quals.push({
             column: colName,
             operator: node.type === "OPERATOR_IS_NULL" ? "IS NULL" : "IS NOT NULL",
             value: null,
+            isKeyColumn: keySet.has(colName),
           });
         }
         return;
@@ -215,11 +221,12 @@ export class QueryEngine {
       // LIKE / ILIKE / NOT LIKE / NOT ILIKE
       if (node.class === "FUNCTION" && node.function_name in QueryEngine.FUNCTION_MAP) {
         const colName = node.children?.[0]?.column_names?.[0];
-        if (colName && keySet.has(colName)) {
+        if (colName && colSet.has(colName)) {
           quals.push({
             column: colName,
             operator: QueryEngine.FUNCTION_MAP[node.function_name],
             value: extractValue(node.children?.[1]?.value),
+            isKeyColumn: keySet.has(colName),
           });
         }
         return;
@@ -332,7 +339,7 @@ export class QueryEngine {
     }
 
     for (const reg of referencedTables) {
-      const quals = await this.extractQuals(sql, reg.keyColNames);
+      const quals = await this.extractQuals(sql, reg.allColumns, reg.keyColNames);
       await this.populateTable(reg, quals);
     }
 
