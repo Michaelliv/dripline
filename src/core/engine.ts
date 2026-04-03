@@ -310,9 +310,13 @@ export class QueryEngine {
         if (v == null) return null;
         return typeof v === "object" ? JSON.stringify(v) : v;
       });
+      const colType = colTypes.get(col) ?? "string";
+      // DuckDB's Arrow scanner crashes on all-null Bool buffers (0-byte data buffer).
+      // Fall back to Utf8 — DuckDB casts NULL varchar to NULL boolean on INSERT.
+      const allNull = colType === "boolean" && values.every((v) => v == null);
       arrowCols[col] = arrow.vectorFromArray(
         values,
-        toArrowType(colTypes.get(col) ?? "string"),
+        allNull ? new arrow.Utf8() : toArrowType(colType),
       );
     }
 
