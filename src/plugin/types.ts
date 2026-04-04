@@ -49,10 +49,16 @@ export interface TableDef {
   description?: string;
 }
 
+export type NativeQueryFunc = (
+  sql: string,
+  ctx: { connection: ConnectionConfig; tableNames: string[] },
+) => Record<string, any>[];
+
 export interface PluginDef {
   name: string;
   version: string;
   tables: TableDef[];
+  nativeQuery?: NativeQueryFunc;
   connectionConfigSchema?: Record<
     string,
     {

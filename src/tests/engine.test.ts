@@ -368,6 +368,209 @@ describe("QueryEngine", () => {
     assert.equal(ctx.ordersCtx.quals.find((q: any) => q.column === "business_date")?.value, "2026-04-03");
   });
 
+  it("same-source JOIN forces full table scan on child table without filter column", async () => {
+    let ordersRowsYielded = 0;
+    let itemsRowsYielded = 0;
+
+    const plugin: PluginDef = {
+      name: "restaurant",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "rest_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "status", type: "string" },
+            { name: "business_date", type: "string" },
+          ],
+          keyColumns: [
+            { name: "org_id", required: "required" },
+            { name: "status", required: "optional" },
+            { name: "business_date", required: "optional" },
+          ],
+          *list(ctx) {
+            // Simulate: plugin filters by org_id + status + business_date
+            const data = [
+              { id: 1, org_id: "org1", status: "closed", business_date: "2026-04-03" },
+              { id: 2, org_id: "org1", status: "closed", business_date: "2026-04-02" },
+              { id: 3, org_id: "org1", status: "open", business_date: "2026-04-03" },
+            ];
+            const status = ctx.quals.find((q: any) => q.column === "status")?.value;
+            const date = ctx.quals.find((q: any) => q.column === "business_date")?.value;
+            for (const d of data) {
+              if (status && d.status !== status) continue;
+              if (date && d.business_date !== date) continue;
+              ordersRowsYielded++;
+              yield d;
+            }
+          },
+        },
+        {
+          name: "rest_order_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+            { name: "quantity", type: "number" },
+          ],
+          // No business_date key column — can't filter by date
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            // Simulate 100K+ items — plugin MUST yield all of them
+            // because there's no date column to filter on
+            const items = [
+              { order_id: 1, org_id: "org1", name: "Pizza", quantity: 2 },
+              { order_id: 1, org_id: "org1", name: "Salad", quantity: 1 },
+              { order_id: 2, org_id: "org1", name: "Burger", quantity: 3 },
+              { order_id: 2, org_id: "org1", name: "Fries", quantity: 2 },
+              { order_id: 3, org_id: "org1", name: "Soup", quantity: 1 },
+            ];
+            for (const item of items) {
+              itemsRowsYielded++;
+              yield item;
+            }
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT oi.name, SUM(oi.quantity) as qty
+      FROM rest_order_items oi
+      JOIN rest_orders o ON oi.order_id = o.id
+      WHERE oi.org_id = 'org1'
+        AND o.business_date = '2026-04-03'
+        AND o.status = 'closed'
+      GROUP BY oi.name
+    `);
+
+    // Query only needs items for order 1 (closed + 2026-04-03)
+    // But the plugin had to yield ALL 5 items because order_items has no date column
+    assert.equal(ordersRowsYielded, 1, "orders plugin filtered to 1 row via pushdown");
+    assert.equal(itemsRowsYielded, 5, "order_items plugin had to yield ALL rows — no date pushdown possible");
+
+    // DuckDB correctly filters after the JOIN
+    assert.equal(rows.length, 2); // Pizza + Salad from order 1
+    assert.equal((rows as any).find((r: any) => r.name === "Pizza")?.qty, 2);
+    assert.equal((rows as any).find((r: any) => r.name === "Salad")?.qty, 1);
+
+    // THIS IS THE PROBLEM: if both tables are from the same source DB,
+    // dripline could delegate the entire JOIN query server-side and avoid
+    // fetching all 5 items (in production: 100K+). Instead it forces a
+    // full scan of the child table.
+  });
+
+  it("nativeQuery delegates entire SQL to plugin, skipping materialization", async () => {
+    let nativeQueryCalled = false;
+    let nativeQuerySql = "";
+    let itemsListCalled = false;
+    let ordersListCalled = false;
+
+    const plugin: PluginDef = {
+      name: "restaurant_native",
+      version: "0.1.0",
+      nativeQuery(sql, ctx) {
+        nativeQueryCalled = true;
+        nativeQuerySql = sql;
+        // Simulate: plugin runs the JOIN server-side and returns results directly
+        return [
+          { name: "Pizza", qty: 2 },
+          { name: "Salad", qty: 1 },
+        ];
+      },
+      tables: [
+        {
+          name: "native_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "status", type: "string" },
+            { name: "business_date", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            ordersListCalled = true;
+            yield { id: 1, org_id: "org1", status: "closed", business_date: "2026-04-03" };
+          },
+        },
+        {
+          name: "native_order_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+            { name: "quantity", type: "number" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            itemsListCalled = true;
+            yield { order_id: 1, org_id: "org1", name: "Pizza", quantity: 2 };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT oi.name, SUM(oi.quantity) as qty
+      FROM native_order_items oi
+      JOIN native_orders o ON oi.order_id = o.id
+      WHERE oi.org_id = 'org1'
+        AND o.business_date = '2026-04-03'
+        AND o.status = 'closed'
+      GROUP BY oi.name
+    `);
+
+    // nativeQuery was called — plugin handled the entire SQL
+    assert.ok(nativeQueryCalled, "nativeQuery should be called");
+    assert.ok(nativeQuerySql.includes("native_orders"), "SQL should be passed through");
+
+    // list() was NEVER called — no materialization happened
+    assert.equal(ordersListCalled, false, "orders list() should not be called");
+    assert.equal(itemsListCalled, false, "order_items list() should not be called");
+
+    // Results came directly from nativeQuery
+    assert.equal(rows.length, 2);
+    assert.equal((rows[0] as any).name, "Pizza");
+    assert.equal((rows[1] as any).name, "Salad");
+  });
+
+  it("nativeQuery not used when tables span multiple plugins", async () => {
+    let nativeQueryCalled = false;
+
+    const plugin1: PluginDef = {
+      name: "plugin_a",
+      version: "0.1.0",
+      nativeQuery() {
+        nativeQueryCalled = true;
+        return [];
+      },
+      tables: [
+        {
+          name: "table_a",
+          columns: [{ name: "id", type: "number" }],
+          *list() { yield { id: 1 }; },
+        },
+      ],
+    };
+
+    const plugin2: PluginDef = {
+      name: "plugin_b",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "table_b",
+          columns: [{ name: "id", type: "number" }],
+          *list() { yield { id: 1 }; },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin1, plugin2] });
+    await engine.query("SELECT * FROM table_a JOIN table_b ON table_a.id = table_b.id");
+
+    // Different plugins — falls back to materialization
+    assert.equal(nativeQueryCalled, false, "nativeQuery should not be called for cross-plugin queries");
+  });
+
   it("non-key WHERE filtered by DuckDB", async () => {
     await setup();
     const rows = await engine.query("SELECT * FROM users WHERE name = 'Alice'");

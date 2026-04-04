@@ -44,6 +44,7 @@ export type {
   HydrateFunc,
   KeyColumn,
   ListFunc,
+  NativeQueryFunc,
   PluginDef,
   Qual,
   QueryContext,

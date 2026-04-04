@@ -4,6 +4,7 @@ import type {
   HydrateFunc,
   KeyColumn,
   ListFunc,
+  NativeQueryFunc,
   PluginDef,
   TableDef,
 } from "./types.js";
@@ -27,6 +28,7 @@ export interface TableDefinition {
 
 export interface DriplinePluginAPI {
   registerTable(name: string, def: TableDefinition): void;
+  registerNativeQuery(fn: NativeQueryFunc): void;
   setConnectionSchema(schema: Record<string, SchemaField>): void;
   setName(name: string): void;
   setVersion(version: string): void;
@@ -48,6 +50,7 @@ export function createPluginAPI(pluginId: string): {
   let version = "0.0.0";
   const tables: TableDef[] = [];
   let connectionConfigSchema: PluginDef["connectionConfigSchema"];
+  let nativeQuery: NativeQueryFunc | undefined;
   const initHooks: Array<(config: Record<string, any>) => void> = [];
 
   const api: DriplinePluginAPI = {
@@ -59,6 +62,9 @@ export function createPluginAPI(pluginId: string): {
     },
     registerTable(tableName: string, def: TableDefinition) {
       tables.push({ name: tableName, ...def });
+    },
+    registerNativeQuery(fn: NativeQueryFunc) {
+      nativeQuery = fn;
     },
     setConnectionSchema(schema: Record<string, SchemaField>) {
       connectionConfigSchema = {};
@@ -89,6 +95,7 @@ export function createPluginAPI(pluginId: string): {
       name,
       version,
       tables,
+      nativeQuery,
       connectionConfigSchema,
     };
     if (initHooks.length > 0) {

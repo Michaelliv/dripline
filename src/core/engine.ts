@@ -370,6 +370,11 @@ export class QueryEngine {
       }
     }
 
+    // Same-source delegation: if all tables belong to one plugin and it
+    // supports nativeQuery, let the plugin execute the entire SQL directly.
+    const nativeRows = this.tryNativeQuery(sql, referencedTables);
+    if (nativeRows) return nativeRows.map(normalizeRow);
+
     const ast = await this.parseAst(sql);
     for (const reg of referencedTables) {
       const quals = this.extractQualsForTable(ast, reg.table.name, reg.keyColNames);
@@ -384,6 +389,26 @@ export class QueryEngine {
     }
 
     return rows.map(normalizeRow);
+  }
+
+  private tryNativeQuery(
+    sql: string,
+    tables: RegisteredTable[],
+  ): Record<string, any>[] | null {
+    if (tables.length === 0) return null;
+
+    // All tables must belong to the same plugin
+    const pluginName = tables[0].pluginName;
+    if (!tables.every((t) => t.pluginName === pluginName)) return null;
+
+    // Plugin must have nativeQuery registered
+    const pluginDef = this.registry.getPlugin(pluginName);
+    if (!pluginDef?.nativeQuery) return null;
+
+    const connection = this.resolveConnection(tables[0]);
+    const tableNames = tables.map((t) => t.table.name);
+
+    return pluginDef.nativeQuery(sql, { connection, tableNames });
   }
 
   getDatabase(): Database {
