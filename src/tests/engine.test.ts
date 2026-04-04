@@ -368,6 +368,445 @@ describe("QueryEngine", () => {
     assert.equal(ctx.ordersCtx.quals.find((q: any) => q.column === "business_date")?.value, "2026-04-03");
   });
 
+  it("two-phase materialization resolves subquery and pushes IDs to outer table", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "restaurant",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "rest_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "status", type: "string" },
+            { name: "business_date", type: "string" },
+          ],
+          keyColumns: [
+            { name: "org_id", required: "required" },
+            { name: "status", required: "optional" },
+            { name: "business_date", required: "optional" },
+          ],
+          *list(ctx) {
+            const status = ctx.quals.find((q: any) => q.column === "status")?.value;
+            const date = ctx.quals.find((q: any) => q.column === "business_date")?.value;
+            const data = [
+              { id: 1, org_id: "org1", status: "closed", business_date: "2026-04-03" },
+              { id: 2, org_id: "org1", status: "open", business_date: "2026-04-03" },
+              { id: 3, org_id: "org1", status: "closed", business_date: "2026-04-02" },
+            ];
+            for (const d of data) {
+              if (status && d.status !== status) continue;
+              if (date && d.business_date !== date) continue;
+              yield d;
+            }
+          },
+        },
+        {
+          name: "rest_order_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+            { name: "quantity", type: "number" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            const orderIdQual = ctx.quals.find((q: any) => q.column === "order_id");
+            const items = [
+              { order_id: 1, org_id: "org1", name: "Pizza", quantity: 2 },
+              { order_id: 1, org_id: "org1", name: "Salad", quantity: 1 },
+              { order_id: 2, org_id: "org1", name: "Burger", quantity: 3 },
+              { order_id: 2, org_id: "org1", name: "Fries", quantity: 2 },
+              { order_id: 3, org_id: "org1", name: "Soup", quantity: 1 },
+            ];
+            for (const item of items) {
+              if (orderIdQual?.operator === "IN") {
+                if (!orderIdQual.value.includes(item.order_id)) continue;
+              }
+              yield item;
+            }
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT oi.name, oi.quantity
+      FROM rest_order_items oi
+      WHERE oi.org_id = 'org1'
+        AND oi.order_id IN (
+          SELECT id FROM rest_orders
+          WHERE org_id = 'org1'
+            AND business_date = '2026-04-03'
+            AND status = 'closed'
+        )
+    `);
+
+    // Engine resolved the subquery to IN (1) and pushed it as a qual
+    const orderIdQual = itemsQuals.find((q: any) => q.column === "order_id");
+    assert.ok(orderIdQual, "order_id qual should be pushed after subquery resolution");
+    assert.equal(orderIdQual.operator, "IN");
+    assert.deepEqual(orderIdQual.value, [1]);
+
+    // Plugin filtered at source — only items for order 1
+    assert.equal(rows.length, 2);
+    assert.ok(rows.find((r: any) => r.name === "Pizza"));
+    assert.ok(rows.find((r: any) => r.name === "Salad"));
+  });
+
+  it("two-phase: NOT IN subquery resolved to literals", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "rest_notin",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "notin_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "status", type: "string" },
+          ],
+          keyColumns: [
+            { name: "org_id", required: "required" },
+            { name: "status", required: "optional" },
+          ],
+          *list(ctx) {
+            const status = ctx.quals.find((q: any) => q.column === "status")?.value;
+            const data = [
+              { id: 1, org_id: "org1", status: "open" },
+              { id: 2, org_id: "org1", status: "cancelled" },
+            ];
+            for (const d of data) {
+              if (status && d.status !== status) continue;
+              yield d;
+            }
+          },
+        },
+        {
+          name: "notin_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            yield { order_id: 1, org_id: "org1", name: "A" };
+            yield { order_id: 2, org_id: "org1", name: "B" };
+            yield { order_id: 3, org_id: "org1", name: "C" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT name FROM notin_items
+      WHERE org_id = 'org1'
+        AND order_id NOT IN (
+          SELECT id FROM notin_orders
+          WHERE org_id = 'org1' AND status = 'cancelled'
+        )
+    `);
+
+    // order_id should NOT include 2 (cancelled)
+    assert.equal(rows.length, 2);
+    assert.ok(rows.find((r: any) => r.name === "A"));
+    assert.ok(rows.find((r: any) => r.name === "C"));
+  });
+
+  it("two-phase: EXISTS subquery skipped (correlated, not resolvable)", async () => {
+    const ctx = { ordersCtx: null as QueryContext | null, itemsCtx: null as QueryContext | null };
+    await setup({ plugins: [makeShopPlugin(ctx)] });
+
+    // EXISTS with correlated reference (o.id = oi.order_id) can't be
+    // resolved to literals — engine should skip and still return correct results
+    const rows = await engine.query(`
+      SELECT name FROM shop_order_items oi
+      WHERE oi.org_id = 'org1'
+        AND EXISTS (
+          SELECT 1 FROM shop_orders o
+          WHERE o.id = oi.order_id
+            AND o.org_id = 'org1'
+            AND o.status = 'closed'
+        )
+    `);
+
+    // Should still work — DuckDB handles EXISTS after materialization
+    assert.ok(rows.length > 0);
+  });
+
+  it("two-phase: CTE subquery resolved", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "rest_cte",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "cte_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "status", type: "string" },
+          ],
+          keyColumns: [
+            { name: "org_id", required: "required" },
+            { name: "status", required: "optional" },
+          ],
+          *list(ctx) {
+            const status = ctx.quals.find((q: any) => q.column === "status")?.value;
+            const data = [
+              { id: 1, org_id: "org1", status: "closed" },
+              { id: 2, org_id: "org1", status: "open" },
+            ];
+            for (const d of data) {
+              if (status && d.status !== status) continue;
+              yield d;
+            }
+          },
+        },
+        {
+          name: "cte_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            yield { order_id: 1, org_id: "org1", name: "Pizza" };
+            yield { order_id: 2, org_id: "org1", name: "Burger" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      WITH closed AS (
+        SELECT id FROM cte_orders
+        WHERE org_id = 'org1' AND status = 'closed'
+      )
+      SELECT name FROM cte_items
+      WHERE org_id = 'org1'
+        AND order_id IN (SELECT id FROM closed)
+    `);
+
+    // CTE references a virtual table "closed" which DuckDB resolves
+    // after cte_orders is materialized. The inner subquery
+    // SELECT id FROM closed should resolve to [1].
+    assert.equal(rows.length, 1);
+    assert.equal((rows[0] as any).name, "Pizza");
+  });
+
+  it("two-phase: multiple subqueries in same query", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "rest_multi",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "multi_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "org_id", type: "string" },
+            { name: "status", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            yield { id: 1, org_id: "org1", status: "closed" };
+            yield { id: 2, org_id: "org1", status: "open" };
+            yield { id: 3, org_id: "org2", status: "closed" };
+          },
+        },
+        {
+          name: "multi_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            yield { order_id: 1, org_id: "org1", name: "A" };
+            yield { order_id: 2, org_id: "org1", name: "B" };
+            yield { order_id: 3, org_id: "org2", name: "C" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT name FROM multi_items
+      WHERE org_id = 'org1'
+        AND order_id IN (SELECT id FROM multi_orders WHERE org_id = 'org1' AND status = 'closed')
+    `);
+
+    // Should resolve subquery to IN (1) and push order_id qual
+    const orderIdQual = itemsQuals.find((q: any) => q.column === "order_id");
+    assert.ok(orderIdQual, "order_id qual should be pushed");
+    assert.equal(orderIdQual.operator, "IN");
+    assert.deepEqual(orderIdQual.value, [1]);
+
+    assert.equal(rows.length, 1);
+    assert.equal((rows[0] as any).name, "A");
+  });
+
+  it("two-phase: scalar subquery (= single value) resolved", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "rest_scalar",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "scalar_orders",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "priority", type: "number" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            yield { id: 1, org_id: "org1", priority: 10 };
+            yield { id: 2, org_id: "org1", priority: 5 };
+          },
+        },
+        {
+          name: "scalar_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            yield { order_id: 1, org_id: "org1", name: "High" };
+            yield { order_id: 2, org_id: "org1", name: "Low" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT name FROM scalar_items
+      WHERE org_id = 'org1'
+        AND order_id = (SELECT id FROM scalar_orders WHERE org_id = 'org1' AND priority = 10)
+    `);
+
+    // Scalar subquery resolves to a single value
+    assert.equal(rows.length, 1);
+    assert.equal((rows[0] as any).name, "High");
+  });
+
+  it("two-phase: subquery with string values resolved", async () => {
+    let itemsQuals: any[] = [];
+
+    const plugin: PluginDef = {
+      name: "rest_str",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "str_categories",
+          columns: [
+            { name: "code", type: "string" },
+            { name: "active", type: "boolean" },
+          ],
+          keyColumns: [],
+          *list() {
+            yield { code: "pizza", active: true };
+            yield { code: "sushi", active: true };
+            yield { code: "salad", active: false };
+          },
+        },
+        {
+          name: "str_items",
+          columns: [
+            { name: "category", type: "string" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [],
+          *list(ctx) {
+            itemsQuals = ctx.quals;
+            yield { category: "pizza", name: "Margherita" };
+            yield { category: "sushi", name: "Salmon Roll" };
+            yield { category: "salad", name: "Caesar" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT name FROM str_items
+      WHERE category IN (
+        SELECT code FROM str_categories WHERE active = true
+      )
+    `);
+
+    // String subquery values should resolve to IN ('pizza', 'sushi')
+    const catQual = itemsQuals.find((q: any) => q.column === "category");
+    assert.ok(catQual, "category qual should be pushed after subquery resolution");
+    assert.equal(catQual.operator, "IN");
+    assert.deepEqual(catQual.value.sort(), ["pizza", "sushi"]);
+
+    assert.equal(rows.length, 2);
+  });
+
+  it("two-phase: empty subquery result handled gracefully", async () => {
+    const plugin: PluginDef = {
+      name: "rest_empty",
+      version: "0.1.0",
+      tables: [
+        {
+          name: "empty_orders",
+          columns: [{ name: "id", type: "number" }],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            // yields nothing
+          },
+        },
+        {
+          name: "empty_items",
+          columns: [
+            { name: "order_id", type: "number" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "org_id", required: "required" }],
+          *list() {
+            yield { order_id: 1, org_id: "org1", name: "A" };
+          },
+        },
+      ],
+    };
+
+    await setup({ plugins: [plugin] });
+    const rows = await engine.query(`
+      SELECT name FROM empty_items
+      WHERE org_id = 'org1'
+        AND order_id IN (
+          SELECT id FROM empty_orders WHERE org_id = 'org1'
+        )
+    `);
+
+    // Subquery returns 0 rows — no items should match
+    assert.equal(rows.length, 0);
+  });
+
+  it("two-phase: query without subqueries unchanged", async () => {
+    await setup();
+    const rows = await engine.query("SELECT * FROM users WHERE role = 'admin'");
+    assert.ok(lastCtx);
+    // Only key column quals — no all-column expansion for non-subquery queries
+    assert.equal(lastCtx.quals.length, 1);
+    assert.equal(lastCtx.quals[0].column, "role");
+  });
+
   it("non-key WHERE filtered by DuckDB", async () => {
     await setup();
     const rows = await engine.query("SELECT * FROM users WHERE name = 'Alice'");

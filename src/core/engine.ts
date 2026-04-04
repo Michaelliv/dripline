@@ -371,8 +371,42 @@ export class QueryEngine {
     }
 
     const ast = await this.parseAst(sql);
-    for (const reg of referencedTables) {
+
+    // Phase 1: Materialize tables that appear inside subqueries first.
+    // This lets us resolve subqueries against local DuckDB before
+    // materializing the outer tables.
+    const subqueryTables = this.findSubqueryTables(ast, referencedTables);
+    const outerTables = referencedTables.filter((t) => !subqueryTables.has(t));
+
+    for (const reg of subqueryTables) {
       const quals = this.extractQualsForTable(ast, reg.table.name, reg.keyColNames);
+      await this.populateTable(reg, quals);
+    }
+
+    // Phase 2: If we materialized subquery tables, resolve subqueries
+    // and rewrite the SQL with literal values. This turns
+    // `order_id IN (SELECT id FROM orders WHERE ...)` into
+    // `order_id IN (1, 2, 3)` — making those predicates available
+    // as quals for the outer tables.
+    let resolvedSql = sql;
+    let resolvedAst = ast;
+    if (subqueryTables.size > 0) {
+      resolvedSql = await this.resolveSubqueries(sql, ast);
+      resolvedAst = await this.parseAst(resolvedSql);
+    }
+
+    // Phase 3: Materialize outer tables. When subqueries were resolved,
+    // extract quals for all columns (not just key columns) so plugins
+    // that build WHERE clauses from quals benefit from the resolved
+    // subquery values automatically.
+    const subqueriesResolved = resolvedSql !== sql;
+    for (const reg of outerTables) {
+      const qualColumns = subqueriesResolved ? reg.allColumns : reg.keyColNames;
+      const quals = this.extractQualsForTable(
+        resolvedAst,
+        reg.table.name,
+        qualColumns,
+      );
       await this.populateTable(reg, quals);
     }
 
@@ -386,12 +420,195 @@ export class QueryEngine {
     return rows.map(normalizeRow);
   }
 
+  /**
+   * Find tables that appear inside subqueries (IN, EXISTS, etc.)
+   * These should be materialized first so we can resolve the subqueries.
+   */
+  private findSubqueryTables(
+    ast: any,
+    referencedTables: RegisteredTable[],
+  ): Set<RegisteredTable> {
+    const subqueryTableNames = new Set<string>();
+
+    const findSubqueryTableNames = (node: any, depth: number): void => {
+      if (!node || typeof node !== "object") return;
+
+      // When we encounter a SELECT_NODE inside a subquery (depth > 0),
+      // collect its table references
+      if (node.type === "SELECT_NODE" && depth > 0) {
+        const walkFrom = (from: any): void => {
+          if (!from) return;
+          if (from.table_name) subqueryTableNames.add(from.table_name);
+          if (from.type === "JOIN") {
+            walkFrom(from.left);
+            walkFrom(from.right);
+          }
+        };
+        walkFrom(node.from_table);
+      }
+
+      // SUBQUERY nodes increase depth
+      const nextDepth =
+        node.class === "SUBQUERY" || node.subquery ? depth + 1 : depth;
+
+      for (const val of Object.values(node)) {
+        if (Array.isArray(val)) {
+          for (const item of val) findSubqueryTableNames(item, nextDepth);
+        } else if (val && typeof val === "object") {
+          findSubqueryTableNames(val, nextDepth);
+        }
+      }
+    };
+
+    if (!ast.error && ast.statements?.[0]?.node) {
+      findSubqueryTableNames(ast.statements[0].node, 0);
+    }
+
+    // Also check CTE definitions — they're inner tables too
+    const cteMap = ast.statements?.[0]?.node?.cte_map?.map ?? [];
+    for (const cte of cteMap) {
+      const cteNode = cte?.value?.query?.node;
+      if (cteNode?.from_table?.table_name) {
+        subqueryTableNames.add(cteNode.from_table.table_name);
+      }
+    }
+
+    const result = new Set<RegisteredTable>();
+    for (const reg of referencedTables) {
+      if (subqueryTableNames.has(reg.table.name)) {
+        result.add(reg);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Resolve subqueries by running them against already-materialized
+   * local tables. Mutates the AST in place — replacing subquery nodes
+   * with literal IN values — then serializes back to SQL via DuckDB.
+   */
+  private async resolveSubqueries(sql: string, ast: any): Promise<string> {
+    const modified = await this.resolveSubqueryNodes(ast.statements[0].node);
+    if (!modified) return sql;
+
+    const astStr = JSON.stringify(ast).replace(/'/g, "''");
+    const result = await this.db.all(
+      `SELECT json_deserialize_sql('${astStr}') as sql`,
+    );
+    return result[0].sql;
+  }
+
+  /**
+   * Walk the AST and replace SUBQUERY IN nodes with literal COMPARE_IN
+   * nodes using results from local DuckDB. Returns true if any were resolved.
+   */
+  private async resolveSubqueryNodes(node: any): Promise<boolean> {
+    if (!node || typeof node !== "object") return false;
+
+    let modified = false;
+
+    // Look for IN/NOT IN with a subquery child, or SUBQUERY nodes
+    if (node.class === "SUBQUERY" && node.subquery?.node) {
+      const subSelect = node.subquery.node;
+      if (subSelect.type === "SELECT_NODE") {
+        try {
+          const subSql = await this.subqueryToSql(subSelect);
+
+          // Run the subquery against already-materialized tables
+          const rows = await this.db.all(subSql);
+          if (rows.length > 0) {
+            const cols = Object.keys(rows[0]);
+            if (cols.length === 1) {
+              const values = rows.map((r) => r[cols[0]]);
+
+              // Build literal constant nodes
+              const constants = values.map((v: any) => ({
+                class: "CONSTANT",
+                type: "VALUE_CONSTANT",
+                alias: "",
+                query_location: 0,
+                value: {
+                  type: {
+                    id: typeof v === "number" ? "INTEGER" : "VARCHAR",
+                    type_info: null,
+                  },
+                  is_null: false,
+                  value: v,
+                },
+              }));
+
+              if (node.child) {
+                // IN/NOT IN subquery — replace with COMPARE_IN
+                const colRef = node.child;
+                node.class = "OPERATOR";
+                node.type = "COMPARE_IN";
+                node.children = [colRef, ...constants];
+                delete node.subquery;
+                delete node.child;
+                delete node.subquery_type;
+                delete node.comparison_type;
+              } else {
+                // Scalar subquery (= (SELECT ...)) — replace with constant
+                Object.keys(node).forEach((k) => delete node[k]);
+                Object.assign(node, constants[0]);
+              }
+              modified = true;
+            }
+          }
+        } catch {
+          // Subquery references tables not yet materialized — skip
+        }
+      }
+    }
+
+    // Recurse into all children
+    for (const val of Object.values(node)) {
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          if (await this.resolveSubqueryNodes(item)) modified = true;
+        }
+      } else if (val && typeof val === "object") {
+        if (await this.resolveSubqueryNodes(val)) modified = true;
+      }
+    }
+
+    return modified;
+  }
+
+  /**
+   * Convert a subquery SELECT node back to SQL via DuckDB's
+   * json_deserialize_sql. Normalizes query_location fields to 0
+   * first — they're position metadata that can have types
+   * incompatible with deserialization.
+   */
+  private async subqueryToSql(subSelect: any): Promise<string> {
+    const subAst = {
+      error: false,
+      statements: [{ node: structuredClone(subSelect), named_param_map: [] }],
+    };
+    normalizeQueryLocations(subAst);
+    const subAstStr = JSON.stringify(subAst).replace(/'/g, "''");
+    const result = await this.db.all(
+      `SELECT json_deserialize_sql('${subAstStr}') as sql`,
+    );
+    return result[0].sql;
+  }
+
   getDatabase(): Database {
     return this.db;
   }
 
   async close(): Promise<void> {
     await this.db.close();
+  }
+}
+
+function normalizeQueryLocations(node: any): void {
+  if (!node || typeof node !== "object") return;
+  if ("query_location" in node) node.query_location = 0;
+  for (const v of Object.values(node)) {
+    if (Array.isArray(v)) v.forEach(normalizeQueryLocations);
+    else if (v && typeof v === "object") normalizeQueryLocations(v);
   }
 }
 
