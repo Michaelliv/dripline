@@ -375,18 +375,11 @@ export class QueryEngine {
       this.rateLimiter.release(pluginName);
     }
 
-    await this.ingestViaArrow(reg, table, rows, quals);
-  }
-
-  private async ingestViaArrow(
-    reg: RegisteredTable,
-    table: TableDef,
-    rows: Record<string, any>[],
-    quals: Qual[],
-  ): Promise<void> {
-    await this.db.run(`DELETE FROM ${this.qualifiedName(table.name)}`);
-    if (rows.length === 0) return;
-    await this.ingestViaArrowInto(reg, table, rows, quals, this.qualifiedName(table.name), table.name);
+    const qn = this.qualifiedName(table.name);
+    await this.db.run(`DELETE FROM ${qn}`);
+    await this.ingestViaArrow(reg, table, rows, quals, (buf) =>
+      `INSERT INTO ${qn} SELECT * FROM ${buf}`,
+    );
   }
 
   async query(sql: string, params?: any[]): Promise<any[]> {
@@ -811,13 +804,31 @@ export class QueryEngine {
     let rowsInserted = 0;
     let batch: Record<string, any>[] = [];
 
+    // Precompute the SQL template for flushing batches
+    let flushSql: (buf: string) => string;
+    if (hasPK) {
+      const pkCols = table.primaryKey!;
+      const pkList = pkCols.map((pk) => `"${pk}"`).join(", ");
+      const nonPkCols = reg.allColumns.filter((c) => !pkCols.includes(c));
+      const allCols = reg.allColumns.map((c) => `"${c}"`).join(", ");
+      if (nonPkCols.length > 0) {
+        const updateSet = nonPkCols
+          .map((c) => `"${c}" = EXCLUDED."${c}"`)
+          .join(", ");
+        flushSql = (buf) =>
+          `INSERT INTO ${qn} (${allCols}) SELECT ${allCols} FROM ${buf}
+           ON CONFLICT (${pkList}) DO UPDATE SET ${updateSet}`;
+      } else {
+        flushSql = (buf) =>
+          `INSERT OR IGNORE INTO ${qn} (${allCols}) SELECT ${allCols} FROM ${buf}`;
+      }
+    } else {
+      flushSql = (buf) => `INSERT INTO ${qn} SELECT * FROM ${buf}`;
+    }
+
     const flushBatch = async () => {
       if (batch.length === 0) return;
-      if (hasPK) {
-        await this.upsertViaArrow(reg, table, batch, quals, qn);
-      } else {
-        await this.ingestViaArrowInto(reg, table, batch, quals, qn, table.name);
-      }
+      await this.ingestViaArrow(reg, table, batch, quals, flushSql);
       rowsInserted += batch.length;
       batch = [];
     };
@@ -860,68 +871,17 @@ export class QueryEngine {
     };
   }
 
-  /** Upsert rows via Arrow IPC using INSERT ... ON CONFLICT. */
-  private async upsertViaArrow(
+  /**
+   * Register rows as an Arrow IPC buffer and execute a SQL statement against it.
+   * This is the single path for all Arrow-based ingestion — append, upsert, and
+   * ephemeral materialization all route through here.
+   */
+  private async ingestViaArrow(
     reg: RegisteredTable,
     table: TableDef,
     rows: Record<string, any>[],
     quals: Qual[],
-    targetQn: string,
-  ): Promise<void> {
-    if (rows.length === 0) return;
-
-    const pkCols = table.primaryKey!;
-    const pkList = pkCols.map((pk) => `"${pk}"`).join(", ");
-    const nonPkCols = reg.allColumns.filter((c) => !pkCols.includes(c));
-    const allCols = reg.allColumns.map((c) => `"${c}"`).join(", ");
-
-    const colTypes = new Map(table.columns.map((c) => [c.name, c.type]));
-    const qualMap = Object.fromEntries(quals.map((q) => [q.column, q.value]));
-
-    const arrowCols: Record<string, arrow.Vector> = {};
-    for (const col of reg.allColumns) {
-      const values = rows.map((row) => {
-        const v = row[col] ?? qualMap[col];
-        if (v == null) return null;
-        return typeof v === "object" ? JSON.stringify(v) : v;
-      });
-      const colType = colTypes.get(col) ?? "string";
-      const allNull = colType === "boolean" && values.every((v) => v == null);
-      arrowCols[col] = arrow.vectorFromArray(
-        values,
-        allNull ? new arrow.Utf8() : toArrowType(colType),
-      );
-    }
-
-    const ipc = arrow.tableToIPC(new arrow.Table(arrowCols), "stream");
-    const buf = `_dripline_buf_upsert_${table.name}`;
-    await this.db.register_buffer(buf, [ipc], true);
-
-    if (nonPkCols.length > 0) {
-      const updateSet = nonPkCols
-        .map((c) => `"${c}" = EXCLUDED."${c}"`)
-        .join(", ");
-      await this.db.run(
-        `INSERT INTO ${targetQn} (${allCols}) SELECT ${allCols} FROM ${buf}
-         ON CONFLICT (${pkList}) DO UPDATE SET ${updateSet}`,
-      );
-    } else {
-      await this.db.run(
-        `INSERT OR IGNORE INTO ${targetQn} (${allCols}) SELECT ${allCols} FROM ${buf}`,
-      );
-    }
-
-    await this.db.unregister_buffer(buf);
-  }
-
-  /** Ingest rows via Arrow IPC into a specific target table. */
-  private async ingestViaArrowInto(
-    reg: RegisteredTable,
-    table: TableDef,
-    rows: Record<string, any>[],
-    quals: Qual[],
-    targetQn: string,
-    bufSuffix: string,
+    sql: (bufName: string) => string,
   ): Promise<void> {
     if (rows.length === 0) return;
 
@@ -946,9 +906,9 @@ export class QueryEngine {
     }
 
     const ipc = arrow.tableToIPC(new arrow.Table(arrowCols), "stream");
-    const buf = `_dripline_buf_${bufSuffix}`;
+    const buf = `_dripline_buf_${table.name}`;
     await this.db.register_buffer(buf, [ipc], true);
-    await this.db.run(`INSERT INTO ${targetQn} SELECT * FROM ${buf}`);
+    await this.db.run(sql(buf));
     await this.db.unregister_buffer(buf);
   }
 
