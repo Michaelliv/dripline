@@ -1092,4 +1092,36 @@ describe("QueryEngine", () => {
     });
     await assert.rejects(() => engine.query("SELECT * FROM broken"), /boom/);
   });
+
+  it("all-null boolean column does not crash Arrow IPC", async () => {
+    await setup({
+      plugins: [
+        {
+          name: "bool_null",
+          version: "0.1.0",
+          tables: [
+            {
+              name: "bool_all_null",
+              columns: [
+                { name: "id", type: "number" },
+                { name: "name", type: "string" },
+                { name: "is_active", type: "boolean" },
+              ],
+              *list() {
+                yield { id: 1, name: "alice", is_active: null };
+                yield { id: 2, name: "bob", is_active: null };
+                yield { id: 3, name: "charlie", is_active: null };
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const rows = await engine.query("SELECT * FROM bool_all_null ORDER BY id");
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].name, "alice");
+    assert.equal(rows[0].is_active, null);
+    assert.equal(rows[1].is_active, null);
+    assert.equal(rows[2].is_active, null);
+  });
 });
