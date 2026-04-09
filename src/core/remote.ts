@@ -70,6 +70,7 @@ export class Remote {
   private readonly aws: AwsClient;
   private readonly r: ResolvedRemote;
   private readonly fs: RemoteFS;
+  private attachedDbs = new WeakSet<Database>();
 
   constructor(cfg: RemoteConfig) {
     this.r = resolveRemote(cfg);
@@ -103,6 +104,7 @@ export class Remote {
    * based on `secretType` so the same code works against both.
    */
   async attach(db: Database): Promise<void> {
+    if (this.attachedDbs.has(db)) return;
     await db.exec(`INSTALL httpfs; LOAD httpfs;`);
     await db.exec(`DROP SECRET IF EXISTS dripline_remote;`);
 
@@ -125,6 +127,7 @@ export class Remote {
           ACCOUNT_ID '${esc(accountMatch[1])}'
         );
       `);
+      this.attachedDbs.add(db);
       return;
     }
 
@@ -142,6 +145,7 @@ export class Remote {
         REGION '${esc(this.r.region)}'
       );
     `);
+    this.attachedDbs.add(db);
   }
 
   // ── Cursor state (per lane) ────────────────────────────────────────
@@ -445,7 +449,6 @@ export class Remote {
     table: string,
     schema = "main",
   ): Promise<void> {
-    await this.attach(db);
     const curatedGlob = this.s3(`curated/${table}/**/*.parquet`);
     const qn = `"${schema}"."${table}"`;
     await db.exec(`
