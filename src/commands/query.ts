@@ -86,12 +86,10 @@ async function runRemoteQuery(sql: string): Promise<Record<string, unknown>[]> {
       .filter((f) => f.endsWith(".json"))
       .map((f) => f.slice(0, -".json".length));
 
-    for (const table of tables) {
-      // attachTable creates a view, not a materialized read — it
-      // never touches the data. SELECT against an empty/missing
-      // table will surface a clear DuckDB error to the user.
-      await remote.attachTable(db, table);
-    }
+    // attachTable creates a view, not a materialized read — it
+    // never touches the data. SELECT against an empty/missing
+    // table will surface a clear DuckDB error to the user.
+    await Promise.all(tables.map((table) => remote.attachTable(db, table)));
 
     return (await db.all(sql)) as Record<string, unknown>[];
   } finally {
