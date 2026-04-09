@@ -127,24 +127,23 @@ export class Remote {
           ACCOUNT_ID '${esc(accountMatch[1])}'
         );
       `);
-      this.attachedDbs.add(db);
-      return;
+    } else {
+      // Generic S3 — works against MinIO, AWS, and any other S3-compatible store.
+      const useSsl = this.r.endpoint.startsWith("https://");
+      const endpointHost = this.r.endpoint.replace(/^https?:\/\//, "");
+      await db.exec(`
+        CREATE SECRET dripline_remote (
+          TYPE S3,
+          KEY_ID '${esc(this.r.accessKeyId)}',
+          SECRET '${esc(this.r.secretAccessKey)}',
+          ENDPOINT '${esc(endpointHost)}',
+          URL_STYLE 'path',
+          USE_SSL ${useSsl},
+          REGION '${esc(this.r.region)}'
+        );
+      `);
     }
 
-    // Generic S3 — works against MinIO, AWS, and any other S3-compatible store.
-    const useSsl = this.r.endpoint.startsWith("https://");
-    const endpointHost = this.r.endpoint.replace(/^https?:\/\//, "");
-    await db.exec(`
-      CREATE SECRET dripline_remote (
-        TYPE S3,
-        KEY_ID '${esc(this.r.accessKeyId)}',
-        SECRET '${esc(this.r.secretAccessKey)}',
-        ENDPOINT '${esc(endpointHost)}',
-        URL_STYLE 'path',
-        USE_SSL ${useSsl},
-        REGION '${esc(this.r.region)}'
-      );
-    `);
     this.attachedDbs.add(db);
   }
 
