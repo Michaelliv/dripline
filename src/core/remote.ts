@@ -305,11 +305,13 @@ export class Remote {
     const pk = opts.primaryKey.map((c) => `"${c}"`).join(", ");
     const orderBy = opts.cursor ? `"${opts.cursor}" DESC NULLS LAST` : pk;
     const parts = (opts.partitionBy ?? []).map((c) => `"${c}"`);
-    // Unpartitioned tables write into a `_/` subdirectory so that
-    // `**/*.parquet` with `hive_partitioning => true` works uniformly.
-    const writeDir = parts.length > 0
-      ? this.s3(`curated/${table}`)
-      : this.s3(`curated/${table}/_`);
+    // Unpartitioned tables write a single file inside a `_/` subdirectory
+    // so that `**/*.parquet` with `hive_partitioning => true` works
+    // uniformly. DuckDB's COPY TO on S3 treats the path as a file key
+    // (not a directory), so we must include the filename explicitly.
+    const writeTarget = parts.length > 0
+      ? `TO '${this.s3(`curated/${table}`)}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000, PARTITION_BY (${parts.join(", ")}), OVERWRITE_OR_IGNORE)`
+      : `TO '${this.s3(`curated/${table}/_/data.parquet`)}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000)`;
     // rawRead is referenced twice: once to extract partition literals,
     // once inside the COPY. DuckDB downloads the raw files from S3
     // twice — acceptable since raw is small (one sync run's output).
@@ -362,9 +364,7 @@ export class Remote {
           ) AS _rn
           FROM (SELECT * FROM ${rawRead} ${curatedUnion})
         ) WHERE _rn = 1
-      ) TO '${writeDir}'
-      (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000
-       ${parts.length > 0 ? `, PARTITION_BY (${parts.join(", ")}), OVERWRITE_OR_IGNORE` : ""});
+      ) ${writeTarget};
     `);
 
     const stats = await db.all(
