@@ -449,8 +449,24 @@ export class Remote {
     schema = "main",
   ): Promise<void> {
     await this.attach(db);
-    const curatedGlob = this.s3(`curated/${table}/**/*.parquet`);
     const qn = `"${schema}"."${table}"`;
+
+    // Prefer manifest file list over glob — avoids S3 LIST + footer
+    // scan that can take 20-50s per table on large warehouses.
+    const manifest = await this.readManifest(table);
+    if (manifest && manifest.files.length > 0) {
+      const paths = manifest.files.map((f) => f.path as string);
+      const listLiteral = paths.map((p) => `'${p}'`).join(", ");
+      await db.exec(`
+        CREATE OR REPLACE VIEW ${qn} AS
+        SELECT * FROM read_parquet([${listLiteral}],
+          hive_partitioning => true, union_by_name => true);
+      `);
+      return;
+    }
+
+    // Fallback: no manifest — use glob (slower but works before first compact)
+    const curatedGlob = this.s3(`curated/${table}/**/*.parquet`);
     await db.exec(`
       CREATE OR REPLACE VIEW ${qn} AS
       SELECT * FROM read_parquet('${curatedGlob}',
