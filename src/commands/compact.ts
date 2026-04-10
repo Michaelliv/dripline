@@ -200,13 +200,15 @@ async function compactTable(
   // parquet via DuckDB's httpfs.
   const db = await Database.create(":memory:");
   try {
-    // Partition curated/ by the table's keyColumns (the "natural" query
-    // filter) — e.g. for github_issues partitioned by (owner, repo).
-    // Fall back to no partitioning if none declared.
+    // Partition curated/ by the table's declared partitionBy, falling
+    // back to keyColumn names. Plugins can override to produce fewer,
+    // larger files (e.g. partition by org_id only instead of org_id + date).
     const partitionBy =
-      table.keyColumns && table.keyColumns.length > 0
-        ? table.keyColumns.map((k) => k.name)
-        : [];
+      table.partitionBy ?? (
+        table.keyColumns && table.keyColumns.length > 0
+          ? table.keyColumns.map((k) => k.name)
+          : []
+      );
 
     const result = await ctx.remote.compact(db, name, {
       primaryKey: table.primaryKey ?? [],

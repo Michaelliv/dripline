@@ -53,6 +53,11 @@ export interface TableDef {
   primaryKey?: string[];
   /** Default params for sync() — used when caller doesn't provide params for this table. */
   syncParams?: Record<string, any>;
+  /** Columns to partition curated parquet by in the warehouse.
+   *  Defaults to keyColumn names when omitted. Set to a subset
+   *  (e.g. ["org_id"] instead of ["org_id", "business_date"])
+   *  to produce fewer, larger files. */
+  partitionBy?: string[];
   /** Column name used as high-water mark for incremental sync. Type inferred from columns[]. */
   cursor?: string;
   /**
