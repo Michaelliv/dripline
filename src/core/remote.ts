@@ -442,6 +442,10 @@ export class Remote {
    * Create or replace a view over `curated/<table>/` so query-mode SQL
    * can reference the table by name. DuckDB does its own predicate /
    * partition pruning via parquet stats.
+   *
+   * Assumes all curated files share an identical schema (guaranteed when
+   * files are produced by `compact()`). No `union_by_name` — DuckDB
+   * infers the schema from the first file.
    */
   async attachTable(
     db: Database,
