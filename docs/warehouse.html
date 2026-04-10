@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dripline — warehouse mode</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --bg: #090c10;
+  --bg-raised: #0d1117;
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2333;
+  --bg-chip: rgba(56,211,159,0.08);
+  --text: #ecf2f8;
+  --text-mid: #9eaab6;
+  --text-dim: #4e5a66;
+  --accent: #38d39f;
+  --accent-soft: rgba(56,211,159,0.15);
+  --accent-muted: #1f7a5a;
+  --border: rgba(255,255,255,0.06);
+  --mono: 'JetBrains Mono', monospace;
+  --display: 'Space Grotesk', sans-serif;
+}
+
+html { background: var(--bg); color: var(--text); }
+body { font-family: var(--display); -webkit-font-smoothing: antialiased; }
+
+/* nav */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  background: rgba(9,12,16,0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-brand {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-brand span { opacity: 0.7; }
+.nav a {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.nav a:hover, .nav a.active { color: var(--accent); }
+
+/* content */
+.content {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 6rem 2rem 8rem;
+}
+
+h1 {
+  font-family: var(--mono);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: 0.5rem;
+}
+h1 span { color: var(--accent); }
+
+.subtitle {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--text-mid);
+  margin-bottom: 3rem;
+  line-height: 1.6;
+}
+
+h2 {
+  font-family: var(--mono);
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-top: 3.5rem;
+  margin-bottom: 1rem;
+  color: var(--accent);
+}
+
+h3 {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+p, li {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-mid);
+  margin-bottom: 1rem;
+}
+
+ul, ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+li { margin-bottom: 0.4rem; }
+
+strong { color: var(--text); font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  background: var(--bg-card);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+pre {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: var(--text-mid);
+  line-height: 1.65;
+}
+
+/* diagram box */
+.diagram {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  margin: 1.5rem 0 2rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-mid);
+  line-height: 1.8;
+  white-space: pre;
+  overflow-x: auto;
+}
+.diagram .hl { color: var(--accent); }
+.diagram .dim { color: var(--text-dim); }
+
+/* info card */
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+}
+.info-card p { margin-bottom: 0.5rem; }
+.info-card p:last-child { margin-bottom: 0; }
+
+/* table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.82rem;
+}
+th {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: left;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-mid);
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+tr:hover td { color: var(--text); }
+
+footer {
+  text-align: center;
+  padding: 4rem 2rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+@media(max-width:640px) {
+  .content { padding: 5rem 1.25rem 6rem; }
+  .nav { padding: 0.75rem 1.25rem; gap: 1.25rem; }
+  .diagram { padding: 1rem; font-size: 0.7rem; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="./" class="nav-brand">dripline<span>💧</span></a>
+  <a href="./">catalog</a>
+  <a href="./warehouse.html" class="active">warehouse</a>
+  <a href="https://github.com/Michaelliv/dripline">github</a>
+</nav>
+
+<main class="content">
+
+<h1>Warehouse <span>Mode</span></h1>
+<p class="subtitle">
+  Turn dripline into a lightweight data warehouse on top of any S3-compatible bucket.
+  Same plugins, same SQL — but data accumulates over time and queries read parquet, not live APIs.
+</p>
+
+<div class="diagram"><span class="hl">Plugin APIs</span> ──→ <span class="hl">dripline run</span> ──→ raw/ <span class="dim">(append-only parquet)</span>
+                                  │
+                           <span class="hl">dripline compact</span>
+                                  │
+                                  ▼
+                           curated/ <span class="dim">(deduped, partitioned parquet)</span>
+                                  │
+                        <span class="hl">dripline query --remote</span>
+                                  │
+                                  ▼
+                             <span class="hl">DuckDB SQL</span></div>
+
+<p>Three commands, one bucket. No scheduler service, no catalog — the bucket is the source of truth and the coordination layer.</p>
+
+<h2>Setup</h2>
+
+<pre><code><span style="color:var(--accent)">$</span> export R2_KEY_ID=...
+<span style="color:var(--accent)">$</span> export R2_SECRET=...
+
+<span style="color:var(--text-dim)"># Point at a bucket</span>
+<span style="color:var(--accent)">$</span> dripline remote set https://&lt;account&gt;.r2.cloudflarestorage.com \
+    --bucket my-warehouse --prefix prod --secret-type S3 \
+    --access-key-env R2_KEY_ID --secret-key-env R2_SECRET
+
+<span style="color:var(--text-dim)"># Define lanes</span>
+<span style="color:var(--accent)">$</span> dripline lane add orders \
+    --table orders --params org_id=abc123 \
+    --interval 15m
+
+<span style="color:var(--text-dim)"># Sync, compact, query</span>
+<span style="color:var(--accent)">$</span> dripline run
+<span style="color:var(--accent)">$</span> dripline compact
+<span style="color:var(--accent)">$</span> dripline query --remote "SELECT COUNT(*) FROM orders"</code></pre>
+
+<h2>Lanes</h2>
+
+<p>A <strong>lane</strong> is a named group of tables synced together on a schedule. Each table can have its own params — key column values passed to the plugin.</p>
+
+<table>
+  <tr><th>Option</th><th>Description</th></tr>
+  <tr><td>interval</td><td>Minimum time between runs. The lane's lease holds for this duration after completion.</td></tr>
+  <tr><td>maxRuntime</td><td>Optional hard cap. Useful for long-running backfills that should yield to other lanes.</td></tr>
+</table>
+
+<p>The same table can appear in multiple lanes with different params (e.g. different orgs). Tables within a lane sync sequentially; lanes are independent.</p>
+
+<h2>Leases</h2>
+
+<p>Workers coordinate via JSON files in <code>_leases/</code>. When <code>dripline run</code> starts a lane, it writes a lease with its holder ID and expiry. Other workers skip that lane. After completion, the lease holds for the lane's interval — a cooldown that prevents unnecessary re-runs.</p>
+
+<p>Run <code>dripline run</code> from multiple machines on a cron — they divide lanes via contention. No leader election, no rebalancing.</p>
+
+<h3>Releasing stale leases</h3>
+
+<pre><code><span style="color:var(--text-dim)"># Release lease, keep cursor (safe default)</span>
+<span style="color:var(--accent)">$</span> dripline lane reset orders --yes
+
+<span style="color:var(--text-dim)"># Release lease AND delete cursor (full rebackfill)</span>
+<span style="color:var(--accent)">$</span> dripline lane reset orders --hard --yes</code></pre>
+
+<h2>Compaction</h2>
+
+<p>Compact merges <code>raw/</code> into <code>curated/</code>. Deduplicates by primary key (latest cursor wins), partitions by key columns, and cleans up consumed raw files.</p>
+
+<h3>Incremental by default</h3>
+
+<p>When raw data only touches 2 out of 8,000 partitions, compact reads those 2 curated partitions — not all 8,000.</p>
+
+<div class="info-card">
+  <p><strong>The algorithm:</strong></p>
+  <p>1. List raw files. If none → skip.</p>
+  <p>2. Read raw parquet, extract distinct partition values as <strong>literals</strong>.</p>
+  <p>3. Read only the matching curated partitions. DuckDB's hive pruning skips non-matching files at the directory level.</p>
+  <p>4. Union raw + affected curated, deduplicate by PK via <code>ROW_NUMBER</code>.</p>
+  <p>5. Write back with <code>PARTITION_BY</code>. Only affected partition files are overwritten.</p>
+  <p>6. Delete consumed raw files.</p>
+</div>
+
+<p>This turns a 66-minute full recompaction into a <strong>5-second</strong> incremental compact for a daily sync.</p>
+
+<h3>Known limitation</h3>
+
+<p>If a row's partition column value changes between syncs (e.g. <code>business_date</code> corrected), the old partition retains the stale copy. Incremental compact only reads partitions present in the new raw data. In practice this is rare — partition columns like <code>org_id</code> are effectively immutable.</p>
+
+<h2>Sync Progress</h2>
+
+<p>During long-running syncs, the engine fires progress events every 10,000 rows:</p>
+
+<pre><code>ℹ [detail] github_issues: 50,000 rows (6.8/s cursor=2025-08-28)</code></pre>
+
+<p>Available via the SDK:</p>
+
+<pre><code>await dl.sync(params, (event) => {
+  console.log(`${event.table}: ${event.rowsInserted} rows`);
+});</code></pre>
+
+<h2>Bucket Layout</h2>
+
+<div class="diagram"><span class="hl">&lt;prefix&gt;/</span>
+├── _leases/
+│   └── lane-&lt;name&gt;.json              <span class="dim">lease + cooldown timer</span>
+├── _state/
+│   └── &lt;lane&gt;/_dripline_sync.parquet  <span class="dim">cursor metadata</span>
+├── _manifests/
+│   └── &lt;table&gt;.json                   <span class="dim">file index + partition stats</span>
+├── <span class="hl">raw/</span>
+│   └── &lt;table&gt;/lane=&lt;lane&gt;/run=&lt;id&gt;.parquet   <span class="dim">append-only</span>
+└── <span class="hl">curated/</span>
+    └── &lt;table&gt;/&lt;partition&gt;=&lt;val&gt;/data_0.parquet   <span class="dim">deduplicated</span></div>
+
+<h2>Production</h2>
+
+<pre><code><span style="color:var(--text-dim)"># One cron line is all you need:</span>
+*/15 * * * * cd /path/to/project && source .env && dripline run && dripline compact</code></pre>
+
+<table>
+  <tr><th>Concern</th><th>Answer</th></tr>
+  <tr><td>Interval</td><td>Set cron to your shortest lane interval. Longer lanes skip automatically.</td></tr>
+  <tr><td>Scaling</td><td>Add more cron entries on different machines. Lease contention divides work.</td></tr>
+  <tr><td>Credentials</td><td>Use <code>--access-key-env</code> / <code>--secret-key-env</code> to keep secrets out of config.</td></tr>
+  <tr><td>Monitoring</td><td>Exit 0 on success, 1 on failure. Logs include row counts, durations, cursors.</td></tr>
+  <tr><td>Backfill</td><td>Set <code>initialCursor</code> in the plugin table definition. First run backfills from there.</td></tr>
+  <tr><td>Cost</td><td>R2: no egress, ~$0.015/GB/month storage, $4.50/M PUTs. Pennies for typical warehouses.</td></tr>
+</table>
+
+</main>
+
+<footer>
+  <a href="https://github.com/Michaelliv/dripline">github.com/Michaelliv/dripline</a>
+</footer>
+
+</body>
+</html>

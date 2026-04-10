@@ -90,8 +90,9 @@ export class Remote {
 
   // ── Path helpers ───────────────────────────────────────────────────
 
-  /** S3 URL for a key inside the configured prefix. Used in DuckDB SQL. */
-  private s3(key: string): string {
+  /** S3 URL for a key inside the configured prefix. Used in DuckDB SQL.
+   *  Public because tests need it to write raw parquet directly. */
+  s3(key: string): string {
     const k = this.r.prefix ? `${this.r.prefix}/${key}` : key;
     return `s3://${this.r.bucket}/${k.replace(/^\//, "")}`;
   }
@@ -278,66 +279,80 @@ export class Remote {
       k.endsWith(".parquet"),
     );
     const rawCount = rawKeys.length;
-    const curatedCount = await this.countObjects(`curated/${table}/`);
-    if (rawCount === 0 && curatedCount === 0) {
+    if (rawCount === 0) {
+      // Nothing new to compact — skip entirely. Curated data is
+      // already deduped and partitioned from the last compact run.
       return { table, rows: 0, files: 0, rawCleaned: 0 };
     }
+    const curatedCount = await this.countObjects(`curated/${table}/`);
 
-    const rawGlob = this.s3(`raw/${table}/**/*.parquet`);
-    const curatedGlob = this.s3(`curated/${table}/**/*.parquet`);
+    const raw = this.s3(`raw/${table}/**/*.parquet`);
+    const curated = this.s3(`curated/${table}/**/*.parquet`);
     const curatedDir = this.s3(`curated/${table}`);
+    const pk = opts.primaryKey.map((c) => `"${c}"`).join(", ");
+    const orderBy = opts.cursor ? `"${opts.cursor}" DESC NULLS LAST` : pk;
+    const parts = (opts.partitionBy ?? []).map((c) => `"${c}"`);
+    // rawRead is referenced twice: once to extract partition literals,
+    // once inside the COPY. DuckDB downloads the raw files from S3
+    // twice — acceptable since raw is small (one sync run's output).
+    const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
 
-    const pkList = opts.primaryKey.map((c) => `"${c}"`).join(", ");
-    const orderBy = opts.cursor ? `"${opts.cursor}" DESC NULLS LAST` : pkList;
+    // Extract the distinct partition combos from raw as literals.
+    // This is a lightweight S3 read (just the new data). Literal IN
+    // values give DuckDB the best hive partition pruning — it can
+    // skip curated files at the directory level without scanning.
+    let curatedFilter = "";
+    if (curatedCount > 0 && parts.length > 0) {
+      const rows = await db.all(
+        `SELECT DISTINCT ${parts.join(", ")} FROM ${rawRead}`,
+      );
+      if (rows.length > 0) {
+        const literals = rows
+          .map(
+            (r) =>
+              `(${parts
+                .map((p) => {
+                  const col = p.replace(/"/g, "");
+                  const v = (r as Record<string, unknown>)[col];
+                  // NULL partition values: WHERE (col) IN (NULL) never
+                  // matches in SQL, so the curated filter will miss that
+                  // partition. Acceptable — partition columns should be NOT NULL.
+                  return v == null
+                    ? "NULL"
+                    : `'${String(v).replace(/'/g, "''")}'`;
+                })
+                .join(", ")})`,
+          )
+          .join(", ");
+        curatedFilter = `WHERE (${parts.join(", ")}) IN (${literals})`;
+      }
+    }
 
-    // Raw and curated have DIFFERENT hive layouts:
-    //   raw:     lane=<lane>/ — lane is metadata only, not a data column
-    //   curated: <partitionBy>/ — these ARE data columns stripped by
-    //            DuckDB's PARTITION_BY on write, so they're only
-    //            recoverable via hive_partitioning=true.
-    // We can't read both under one hive setting. Instead we read them
-    // separately with the right setting each and UNION ALL BY NAME,
-    // which aligns columns by name across the two schemas.
-    const rawSelect =
-      rawCount > 0
-        ? `SELECT * FROM read_parquet('${rawGlob}',
-             union_by_name => true,
-             hive_partitioning => false)`
-        : null;
-    const curatedSelect =
+    // Single COPY: raw + affected curated slice → deduped → partitioned parquet.
+    const curatedUnion =
       curatedCount > 0
-        ? `SELECT * FROM read_parquet('${curatedGlob}',
-             union_by_name => true,
-             hive_partitioning => true)`
-        : null;
-    const selects = [rawSelect, curatedSelect].filter(
-      (s): s is string => s !== null,
-    );
-    const src =
-      selects.length === 1
-        ? selects[0]
-        : selects.join("\n      UNION ALL BY NAME\n      ");
-    const deduped = `
-      SELECT * EXCLUDE (_rn) FROM (
-        SELECT *, ROW_NUMBER() OVER (
-          PARTITION BY ${pkList} ORDER BY ${orderBy}
-        ) AS _rn FROM (${src})
-      ) WHERE _rn = 1
-    `;
-    const partitionClause =
-      opts.partitionBy && opts.partitionBy.length > 0
-        ? `, PARTITION_BY (${opts.partitionBy.map((c) => `"${c}"`).join(", ")}), OVERWRITE_OR_IGNORE`
-        : ", OVERWRITE_OR_IGNORE";
+        ? `UNION ALL BY NAME
+           SELECT * FROM read_parquet('${curated}',
+             union_by_name => true, hive_partitioning => true)
+           ${curatedFilter}`
+        : "";
 
     await db.exec(`
-      COPY (${deduped}) TO '${curatedDir}'
-      (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000${partitionClause});
+      COPY (
+        SELECT * EXCLUDE (_rn) FROM (
+          SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY ${pk} ORDER BY ${orderBy}
+          ) AS _rn
+          FROM (SELECT * FROM ${rawRead} ${curatedUnion})
+        ) WHERE _rn = 1
+      ) TO '${curatedDir}'
+      (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000
+       ${parts.length > 0 ? `, PARTITION_BY (${parts.join(", ")}), OVERWRITE_OR_IGNORE` : ", OVERWRITE_OR_IGNORE"});
     `);
 
-    const stats = await db.all(`
-      SELECT COUNT(*) AS n FROM read_parquet('${curatedGlob}',
-        hive_partitioning => true);
-    `);
+    const stats = await db.all(
+      `SELECT COUNT(*) AS n FROM read_parquet('${curated}', hive_partitioning => true);`,
+    );
     const rows = Number((stats[0] as { n: bigint | number })?.n ?? 0);
     const files = await this.refreshManifest(db, table, opts.partitionBy ?? []);
 

@@ -114,6 +114,86 @@ function setPluginRows(
   PLUGIN_ROWS = rows;
 }
 
+/** Multi-column partition plugin for testing org + date partitioning. */
+let MULTI_ROWS: Array<{
+  id: number;
+  name: string;
+  updated_at: string;
+  org: string;
+  biz_date: string;
+}> = [];
+
+function registerMultiPartPlugin(): void {
+  const plugin: PluginDef = {
+    name: "multi_part_test",
+    version: "1.0.0",
+    tables: [
+      {
+        name: "sales",
+        columns: [
+          { name: "id", type: "number" },
+          { name: "name", type: "string" },
+          { name: "updated_at", type: "datetime" },
+        ],
+        keyColumns: [
+          { name: "org", required: "required" },
+          { name: "biz_date", required: "required" },
+        ],
+        primaryKey: ["id"],
+        cursor: "updated_at",
+        async *list() {
+          for (const row of MULTI_ROWS) yield row;
+        },
+      },
+    ],
+  };
+  registry.register(plugin);
+}
+
+function setMultiRows(
+  rows: Array<{
+    id: number;
+    name: string;
+    updated_at: string;
+    org: string;
+    biz_date: string;
+  }>,
+): void {
+  MULTI_ROWS = rows;
+}
+
+function makeMultiProject(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "dripline-compact-multi-"));
+  mkdirSync(join(dir, ".dripline"), { recursive: true });
+  const config: DriplineConfig = {
+    connections: [{ name: "default", plugin: "multi_part_test", config: {} }],
+    cache: { enabled: true, ttl: 300, maxSize: 1000 },
+    rateLimits: {},
+    lanes: {
+      main: {
+        tables: [
+          { name: "sales", params: { org: "x", biz_date: "2024-01-01" } },
+        ],
+        interval: "60s",
+        maxRuntime: "10s",
+      },
+    },
+    remote: {
+      endpoint: ENDPOINT,
+      bucket: BUCKET,
+      prefix,
+      accessKeyId: KEY,
+      secretAccessKey: SECRET,
+      secretType: "S3",
+    },
+  };
+  writeFileSync(
+    join(dir, ".dripline", "config.json"),
+    JSON.stringify(config, null, 2),
+  );
+  return dir;
+}
+
 function makeProject(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), "dripline-compact-"));
   mkdirSync(join(dir, ".dripline"), { recursive: true });
@@ -363,12 +443,9 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
       const second = await compact({ quiet: true });
 
       assert.equal(first[0].status, "ok");
-      assert.equal(second[0].status, "ok");
-      assert.equal(
-        first[0].rows,
-        second[0].rows,
-        "row count must be stable across compactions",
-      );
+      // Second compact has no new raw files — correctly skips.
+      assert.equal(second[0].status, "skipped");
+      assert.equal(second[0].rows, 0);
 
       // Manifest should still be present and consistent.
       const count = await countCurated(prefix, "items");
@@ -544,9 +621,15 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
       );
       await run({ quiet: true });
       const compactResult = await compact({ quiet: true });
-      assert.equal(compactResult[0].status, "ok");
+      // First cycle has raw files → "ok". Subsequent cycles: cursor
+      // blocks re-syncs, run() produces 0 rows, no raw → "skipped".
+      if (cycle === 0) {
+        assert.equal(compactResult[0].status, "ok");
+      } else {
+        assert.equal(compactResult[0].status, "skipped");
+      }
 
-      // Raw should be empty after every cycle.
+      // Raw should be empty after every cycle (either cleaned or never written).
       const rawAfter = await remote.listObjects("raw/items/");
       assert.equal(
         rawAfter.length,
@@ -558,6 +641,749 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
     // Curated row count is stable across cycles.
     assert.equal(await countCurated(prefix, "items"), 3);
   });
+
+  ift(
+    "incremental: second compact only rewrites partitions with new raw data",
+    async () => {
+      const prefix = freshPrefix("incremental");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: sync 3 rows in org "x", compact.
+      setPluginRows([
+        { id: 1, name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+        { id: 2, name: "b", updated_at: "2024-02-01T00:00:00Z", org: "x" },
+        { id: 3, name: "c", updated_at: "2024-03-01T00:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      const first = await compact({ quiet: true });
+      assert.equal(first[0].status, "ok");
+      assert.equal(first[0].rows, 3);
+
+      // Record the curated file for org "x" — we'll verify it survives.
+      const orgXFiles = await remote.listObjects("curated/items/org=x/");
+      assert.ok(orgXFiles.length > 0, "org x should have curated files");
+
+      // Get last-modified timestamps for org "x" files to prove they
+      // aren't rewritten by the second compact.
+      const getLastModified = async (key: string) => {
+        const r = await aws.fetch(`${ENDPOINT}/${BUCKET}/${prefix}/${key}`, {
+          method: "HEAD",
+        });
+        return r.headers.get("last-modified");
+      };
+      const orgXTimestamps = await Promise.all(
+        orgXFiles.map(async (k) => ({ key: k, ts: await getLastModified(k) })),
+      );
+
+      // Cycle 2: sync 2 NEW rows in org "y" (different partition).
+      // Release the lane lease so run() can re-acquire.
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      // Also clear the cursor state so the engine re-syncs.
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows([
+        { id: 10, name: "d", updated_at: "2024-04-01T00:00:00Z", org: "y" },
+        { id: 11, name: "e", updated_at: "2024-05-01T00:00:00Z", org: "y" },
+      ]);
+      await run({ quiet: true });
+
+      // Verify raw/ has files (from org "y" sync).
+      const rawBefore = await remote.listObjects("raw/items/");
+      assert.ok(rawBefore.length > 0, "raw/ should have org y files");
+
+      // Compact — should only process the org="y" partition.
+      const second = await compact({ quiet: true });
+      assert.equal(second[0].status, "ok");
+      // Total curated rows: 3 (org x) + 2 (org y) = 5.
+      assert.equal(second[0].rows, 5);
+
+      // Verify org "x" files were NOT rewritten (same last-modified).
+      // This is the core assertion: incremental compact skips
+      // partitions that have no new raw data.
+      for (const { key, ts } of orgXTimestamps) {
+        const current = await getLastModified(key);
+        assert.equal(
+          current,
+          ts,
+          `org x file ${key} should not have been rewritten`,
+        );
+      }
+
+      // Verify org "y" data is correct.
+      const orgYRow = await readCuratedById(prefix, "items", 10);
+      assert.ok(orgYRow, "org y row should exist in curated");
+      assert.equal(orgYRow.name, "d");
+
+      // Verify org "x" data is still correct.
+      const orgXRow = await readCuratedById(prefix, "items", 1);
+      assert.ok(orgXRow, "org x row should still exist in curated");
+      assert.equal(orgXRow.name, "a");
+    },
+  );
+
+  ift(
+    "incremental: raw spanning multiple partitions reads all affected curated",
+    async () => {
+      const prefix = freshPrefix("incr-multi");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: seed both orgs.
+      setPluginRows([
+        { id: 1, name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+        { id: 2, name: "b", updated_at: "2024-01-01T00:00:00Z", org: "y" },
+      ]);
+      await run({ quiet: true });
+      await compact({ quiet: true });
+
+      // Cycle 2: update rows in BOTH orgs (raw spans two partitions).
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows([
+        {
+          id: 1,
+          name: "a-updated",
+          updated_at: "2024-06-01T00:00:00Z",
+          org: "x",
+        },
+        {
+          id: 2,
+          name: "b-updated",
+          updated_at: "2024-06-01T00:00:00Z",
+          org: "y",
+        },
+      ]);
+      await run({ quiet: true });
+      const results = await compact({ quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 2, "should still be 2 rows after dedupe");
+
+      // Both rows should have the updated name.
+      const row1 = await readCuratedById(prefix, "items", 1);
+      assert.equal(row1?.name, "a-updated");
+      const row2 = await readCuratedById(prefix, "items", 2);
+      assert.equal(row2?.name, "b-updated");
+    },
+  );
+
+  ift(
+    "incremental: PK migrates to different partition leaves stale row (known limitation)",
+    async () => {
+      // This documents a known limitation of incremental compaction:
+      // if a row's partition column value changes between syncs, the
+      // old partition retains the stale row because incremental compact
+      // only reads partitions present in the new raw data.
+      //
+      // For real-world data (org_id, business_date) this is extremely
+      // rare — org_id never changes and business_date corrections are
+      // uncommon. A periodic full compact (--full flag) would clean it.
+      const prefix = freshPrefix("incr-migrate");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: id=1 in org "x".
+      setPluginRows([
+        {
+          id: 1,
+          name: "original",
+          updated_at: "2024-01-01T00:00:00Z",
+          org: "x",
+        },
+      ]);
+      await run({ quiet: true });
+      await compact({ quiet: true });
+
+      // Cycle 2: same PK id=1 now in org "y" (partition migration).
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows([
+        {
+          id: 1,
+          name: "migrated",
+          updated_at: "2024-06-01T00:00:00Z",
+          org: "y",
+        },
+      ]);
+      await run({ quiet: true });
+      const results = await compact({ quiet: true });
+      assert.equal(results[0].status, "ok");
+
+      // Known limitation: stale row in org "x" survives because
+      // incremental compact only read org "y" from curated.
+      // Row exists in BOTH partitions — 2 total instead of 1.
+      assert.equal(
+        results[0].rows,
+        2,
+        "known limitation: stale row in old partition survives incremental compact",
+      );
+
+      // Verify both partitions have the row by counting across all curated.
+      const { Database: DB } = await import("duckdb-async");
+      const verifyDb = await DB.create(":memory:");
+      try {
+        await remote.attach(verifyDb);
+        const url = `s3://${BUCKET}/${prefix}/curated/items/**/*.parquet`;
+        const allRows = await verifyDb.all(
+          `SELECT id, name, org FROM read_parquet('${url}', hive_partitioning => true) WHERE id = 1 ORDER BY org`,
+        );
+        assert.equal(allRows.length, 2, "PK=1 should appear in 2 partitions");
+        // org "x" has the stale row, org "y" has the migrated row.
+        assert.equal((allRows[0] as any).org, "x");
+        assert.equal((allRows[0] as any).name, "original");
+        assert.equal((allRows[1] as any).org, "y");
+        assert.equal((allRows[1] as any).name, "migrated");
+      } finally {
+        await verifyDb.close();
+      }
+    },
+  );
+
+  ift(
+    "incremental: new partition value not in curated creates cleanly",
+    async () => {
+      const prefix = freshPrefix("incr-newpart");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: org "x" only.
+      setPluginRows([
+        { id: 1, name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      await compact({ quiet: true });
+
+      // Cycle 2: brand new org "z" that has no curated partition yet.
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows([
+        {
+          id: 10,
+          name: "z-item",
+          updated_at: "2024-06-01T00:00:00Z",
+          org: "z",
+        },
+      ]);
+      await run({ quiet: true });
+      const results = await compact({ quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 2, "1 from org x + 1 from org z");
+
+      const orgZRow = await readCuratedById(prefix, "items", 10);
+      assert.ok(orgZRow);
+      assert.equal(orgZRow.name, "z-item");
+
+      // Org "x" untouched.
+      const orgXRow = await readCuratedById(prefix, "items", 1);
+      assert.ok(orgXRow);
+      assert.equal(orgXRow.name, "a");
+    },
+  );
+
+  ift(
+    "incremental: all raw rows are exact duplicates of curated — row count stable",
+    async () => {
+      const prefix = freshPrefix("incr-dupes");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      const rows = [
+        { id: 1, name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+        { id: 2, name: "b", updated_at: "2024-02-01T00:00:00Z", org: "x" },
+      ];
+
+      // Cycle 1: initial.
+      setPluginRows(rows);
+      await run({ quiet: true });
+      await compact({ quiet: true });
+
+      // Cycle 2: exact same rows re-synced.
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows(rows);
+      await run({ quiet: true });
+      const results = await compact({ quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 2, "dedupe should keep exactly 2 rows");
+    },
+  );
+
+  ift(
+    "incremental: dedupe within affected partition picks latest cursor",
+    async () => {
+      const prefix = freshPrefix("incr-dedupe");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: original row.
+      setPluginRows([
+        { id: 1, name: "old", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      await compact({ quiet: true });
+
+      // Cycle 2: same PK, same partition, newer cursor — should overwrite.
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      setPluginRows([
+        { id: 1, name: "new", updated_at: "2024-12-01T00:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      const results = await compact({ quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 1, "dedupe should keep 1 row");
+
+      const row = await readCuratedById(prefix, "items", 1);
+      assert.ok(row);
+      assert.equal(row.name, "new", "newer cursor should win");
+      assert.equal(row.updated_at, "2024-12-01T00:00:00Z");
+    },
+  );
+
+  // ── Multi-column partition tests ──────────────────────────────────
+  // These bypass run() and write raw parquet directly to test compact
+  // in isolation with multi-column partitions (org + biz_date).
+
+  /** Write rows as a raw parquet file via DuckDB, simulating a sync run. */
+  async function writeRawParquet(
+    remote: Remote,
+    table: string,
+    rows: Record<string, unknown>[],
+    runId: string,
+  ): Promise<void> {
+    const { Database: DB } = await import("duckdb-async");
+    const db = await DB.create(":memory:");
+    try {
+      await remote.attach(db);
+      // Create temp table from the rows.
+      const cols = Object.keys(rows[0]);
+      const colDefs = cols.map((c) => `"${c}" VARCHAR`).join(", ");
+      await db.exec(`CREATE TEMP TABLE _upload (${colDefs});`);
+      for (const row of rows) {
+        const vals = cols.map((c) => {
+          const v = row[c];
+          return v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
+        });
+        await db.exec(`INSERT INTO _upload VALUES (${vals.join(", ")});`);
+      }
+      const url = remote.s3(`raw/${table}/lane=test/run=${runId}.parquet`);
+      await db.exec(`
+        COPY (SELECT * FROM _upload) TO '${url}'
+        (FORMAT PARQUET, COMPRESSION ZSTD);
+      `);
+    } finally {
+      await db.close();
+    }
+  }
+
+  ift(
+    "multi-partition: incremental compact with org + biz_date partitioning",
+    async () => {
+      registerMultiPartPlugin();
+      const prefix = freshPrefix("multi-part");
+      process.chdir(makeMultiProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: write raw with two orgs, two dates.
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "1",
+            name: "a",
+            updated_at: "2024-01-01T00:00:00Z",
+            org: "x",
+            biz_date: "2024-01-01",
+          },
+          {
+            id: "2",
+            name: "b",
+            updated_at: "2024-01-01T00:00:00Z",
+            org: "x",
+            biz_date: "2024-01-02",
+          },
+          {
+            id: "3",
+            name: "c",
+            updated_at: "2024-01-01T00:00:00Z",
+            org: "y",
+            biz_date: "2024-01-01",
+          },
+        ],
+        "run-1",
+      );
+      const r1 = await compact({ tables: ["sales"], quiet: true });
+      assert.equal(r1[0].status, "ok");
+
+      const count1 = await countCurated(prefix, "sales");
+      assert.equal(count1, 3);
+
+      // Record timestamps for org "y" partitions.
+      const getLastModified = async (key: string) => {
+        const r = await aws.fetch(`${ENDPOINT}/${BUCKET}/${prefix}/${key}`, {
+          method: "HEAD",
+        });
+        return r.headers.get("last-modified");
+      };
+      const orgYFiles = await remote.listObjects("curated/sales/org=y/");
+      assert.ok(orgYFiles.length > 0);
+      const orgYTimestamps = await Promise.all(
+        orgYFiles.map(async (k) => ({ key: k, ts: await getLastModified(k) })),
+      );
+
+      // Cycle 2: update only org "x", date "2024-01-01".
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "1",
+            name: "a-updated",
+            updated_at: "2024-06-01T00:00:00Z",
+            org: "x",
+            biz_date: "2024-01-01",
+          },
+        ],
+        "run-2",
+      );
+      const results = await compact({ tables: ["sales"], quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 3, "still 3 rows after dedupe");
+
+      const row1 = await readCuratedById(prefix, "sales", 1);
+      assert.ok(row1);
+      assert.equal(row1.name, "a-updated");
+
+      // org "y" partition should NOT have been rewritten.
+      for (const { key, ts } of orgYTimestamps) {
+        const current = await getLastModified(key);
+        assert.equal(
+          current,
+          ts,
+          `org y file ${key} should not have been rewritten`,
+        );
+      }
+    },
+  );
+
+  ift(
+    "multi-partition: new date for existing org creates partition without touching others",
+    async () => {
+      registerMultiPartPlugin();
+      const prefix = freshPrefix("multi-newdate");
+      process.chdir(makeMultiProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+
+      // Cycle 1: org "x", one date.
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "1",
+            name: "a",
+            updated_at: "2024-01-01T00:00:00Z",
+            org: "x",
+            biz_date: "2024-01-01",
+          },
+        ],
+        "run-1",
+      );
+      await compact({ tables: ["sales"], quiet: true });
+
+      const getLastModified = async (key: string) => {
+        const r = await aws.fetch(`${ENDPOINT}/${BUCKET}/${prefix}/${key}`, {
+          method: "HEAD",
+        });
+        return r.headers.get("last-modified");
+      };
+      const jan1Files = await remote.listObjects(
+        "curated/sales/org=x/biz_date=2024-01-01/",
+      );
+      const jan1Timestamps = await Promise.all(
+        jan1Files.map(async (k) => ({ key: k, ts: await getLastModified(k) })),
+      );
+
+      // Cycle 2: same org, new date.
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "2",
+            name: "b",
+            updated_at: "2024-06-01T00:00:00Z",
+            org: "x",
+            biz_date: "2024-01-02",
+          },
+        ],
+        "run-2",
+      );
+      const results = await compact({ tables: ["sales"], quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 2, "1 old + 1 new");
+
+      // Jan 1 partition untouched.
+      for (const { key, ts } of jan1Timestamps) {
+        const current = await getLastModified(key);
+        assert.equal(
+          current,
+          ts,
+          `jan 1 file ${key} should not have been rewritten`,
+        );
+      }
+
+      const row2 = await readCuratedById(prefix, "sales", 2);
+      assert.ok(row2);
+      assert.equal(row2.name, "b");
+    },
+  );
+
+  ift(
+    "multi-partition: literal IN handles single quotes in partition values",
+    async () => {
+      registerMultiPartPlugin();
+      const prefix = freshPrefix("multi-special");
+      process.chdir(makeMultiProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+
+      // Cycle 1: org with a single quote.
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "1",
+            name: "a",
+            updated_at: "2024-01-01T00:00:00Z",
+            org: "o'reilly",
+            biz_date: "2024-01-01",
+          },
+        ],
+        "run-1",
+      );
+      await compact({ tables: ["sales"], quiet: true });
+
+      // Cycle 2: same org, updated — verifies no SQL injection.
+      await writeRawParquet(
+        remote,
+        "sales",
+        [
+          {
+            id: "1",
+            name: "a-updated",
+            updated_at: "2024-06-01T00:00:00Z",
+            org: "o'reilly",
+            biz_date: "2024-01-01",
+          },
+        ],
+        "run-2",
+      );
+      const results = await compact({ tables: ["sales"], quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 1);
+
+      const row = await readCuratedById(prefix, "sales", 1);
+      assert.ok(row);
+      assert.equal(row.name, "a-updated");
+    },
+  );
+
+  ift(
+    "multi-partition: high cardinality — many partition combos in one raw batch",
+    async () => {
+      registerMultiPartPlugin();
+      const prefix = freshPrefix("multi-highcard");
+      process.chdir(makeMultiProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+
+      // 30 distinct partition combos in one raw file.
+      const rows: Record<string, unknown>[] = [];
+      for (let d = 1; d <= 30; d++) {
+        rows.push({
+          id: String(d),
+          name: `day-${d}`,
+          updated_at: "2024-01-01T00:00:00Z",
+          org: "x",
+          biz_date: `2024-01-${String(d).padStart(2, "0")}`,
+        });
+      }
+      await writeRawParquet(remote, "sales", rows, "run-1");
+      const results = await compact({ tables: ["sales"], quiet: true });
+
+      assert.equal(results[0].status, "ok");
+      assert.equal(results[0].rows, 30);
+      assert.ok(
+        results[0].files >= 30,
+        "should have at least 30 partition files",
+      );
+    },
+  );
 
   ift("missing remote rejects with a clear error", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dripline-compact-"));
