@@ -35,6 +35,29 @@ import type { SyncProgressEvent } from "../plugin/types.js";
 
 export type SyncProgressCallback = (event: SyncProgressEvent) => void;
 
+/**
+ * Options for `sync()`. Passed as the second argument instead of a
+ * bare callback so cancellation can be expressed alongside progress
+ * reporting without breaking the signature later.
+ */
+export interface SyncOptions {
+  /**
+   * Cancel an in-flight sync. Aborting causes sync() to throw an
+   * AbortError at the next cancellation checkpoint (between tables,
+   * at the top of the row iterator, and between batches). Plugins
+   * that forward `ctx.signal` to their `fetch()` calls will also
+   * cancel in-flight HTTP requests.
+   *
+   * Rows already flushed to DuckDB stay; the `_dripline_sync` cursor
+   * row for the currently-syncing table is NOT written on abort, so
+   * re-running the sync will resume from the prior cursor rather than
+   * from the aborted high-water mark. That trades a small amount of
+   * duplicate work for exactly-once cursor progression.
+   */
+  signal?: AbortSignal;
+  onProgress?: SyncProgressCallback;
+}
+
 export interface SyncResult {
   tables: SyncTableResult[];
   errors: Array<{ table: string; plugin: string; error: string }>;
@@ -621,8 +644,15 @@ export class QueryEngine {
   /** Sync tables from plugins into persistent storage. */
   async sync(
     syncParams?: Record<string, Record<string, any>>,
-    onProgress?: SyncProgressCallback,
+    optsOrCallback?: SyncOptions | SyncProgressCallback,
   ): Promise<SyncResult> {
+    // Back-compat: callers used to pass a bare callback as the second
+    // arg. Keep that working; new callers pass { signal, onProgress }.
+    const opts: SyncOptions =
+      typeof optsOrCallback === "function"
+        ? { onProgress: optsOrCallback }
+        : (optsOrCallback ?? {});
+    const { signal, onProgress } = opts;
     if (this.ownsDb) {
       throw new Error(
         "sync() requires an external database. Pass { database, schema } to Dripline.create().",
@@ -653,6 +683,12 @@ export class QueryEngine {
     const errors: SyncResult["errors"] = [];
 
     for (const [tableName, reg] of tablesToSync) {
+      // Cancellation checkpoint — between tables, so we complete the
+      // one we're on (already has cursor machinery mid-flight) before
+      // honoring the abort. syncTable() checks internally too for
+      // long-running single-table syncs.
+      signal?.throwIfAborted();
+
       const start = Date.now();
       const params = {
         ...reg.table.syncParams,
@@ -660,7 +696,7 @@ export class QueryEngine {
       };
       const pk = this.paramsKey(params);
       try {
-        const result = await this.syncTable(reg, params, onProgress);
+        const result = await this.syncTable(reg, params, onProgress, signal);
         results.push(result);
 
         // Update metadata
@@ -730,6 +766,7 @@ export class QueryEngine {
     reg: RegisteredTable,
     params: Record<string, any>,
     onProgress?: SyncProgressCallback,
+    signal?: AbortSignal,
   ): Promise<SyncTableResult> {
     const start = Date.now();
     const { table, pluginName } = reg;
@@ -790,10 +827,17 @@ export class QueryEngine {
       }
     }
 
-    // Build context
+    // Build context. `signal` flows into ctx so plugins can forward it
+    // to fetch() and cancel in-flight HTTP requests the moment the
+    // caller aborts.
     const connection = this.resolveConnection(reg);
     const visibleColumns = table.columns.map((c) => c.name);
-    const ctx: QueryContext = { connection, quals, columns: visibleColumns };
+    const ctx: QueryContext = {
+      connection,
+      quals,
+      columns: visibleColumns,
+      signal,
+    };
     if (table.cursor) {
       ctx.cursor = cursorValue != null ? { column: table.cursor, value: cursorValue } : null;
     }
@@ -856,31 +900,46 @@ export class QueryEngine {
     };
 
     this.rateLimiter.acquireSync(pluginName);
-    for await (const row of table.list(ctx)) {
-      // Engine-side cursor filter: skip rows not newer than the high-water mark
-      if (hasCursor && cursorValue != null) {
-        const v = row[table.cursor!];
-        if (v == null || v <= cursorValue) continue;
-      }
+    try {
+      for await (const row of table.list(ctx)) {
+        // Cancellation checkpoint — at the top of the row iterator.
+        // Bounds a single-table abort to "one more yielded row then
+        // throw". Combined with ctx.signal on fetch(), this aborts in
+        // effectively O(network RTT) for well-behaved plugins.
+        signal?.throwIfAborted();
 
-      // Track high-water mark
-      if (table.cursor) {
-        const v = row[table.cursor];
-        if (v != null && (newCursor == null || v > newCursor)) {
-          newCursor = v;
+        // Engine-side cursor filter: skip rows not newer than the high-water mark
+        if (hasCursor && cursorValue != null) {
+          const v = row[table.cursor!];
+          if (v == null || v <= cursorValue) continue;
+        }
+
+        // Track high-water mark
+        if (table.cursor) {
+          const v = row[table.cursor];
+          if (v != null && (newCursor == null || v > newCursor)) {
+            newCursor = v;
+          }
+        }
+
+        batch.push(row);
+        if (batch.length >= BATCH_SIZE) {
+          await flushBatch();
+          if (onProgress) {
+            onProgress({ table: table.name, rowsInserted, cursor: newCursor, elapsedMs: Date.now() - start });
+          }
+          // Cancellation checkpoint — between batches. We've just done
+          // a potentially expensive INSERT; the next iteration will go
+          // fetch more rows, which is wasted work if we're aborting.
+          signal?.throwIfAborted();
         }
       }
-
-      batch.push(row);
-      if (batch.length >= BATCH_SIZE) {
-        await flushBatch();
-        if (onProgress) {
-          onProgress({ table: table.name, rowsInserted, cursor: newCursor, elapsedMs: Date.now() - start });
-        }
-      }
+      await flushBatch();
+    } finally {
+      // Release the rate-limit token even on abort so the next sync
+      // doesn't inherit a zombie permit.
+      this.rateLimiter.release(pluginName);
     }
-    await flushBatch();
-    this.rateLimiter.release(pluginName);
 
     // Read final state from the table
     const countResult = await this.db.all(`SELECT COUNT(*) as cnt FROM ${qn}`);

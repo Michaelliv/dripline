@@ -3,7 +3,11 @@ import type { DriplineConfig } from "./config/types.js";
 import { DEFAULT_CONFIG } from "./config/types.js";
 import { QueryCache } from "./core/cache.js";
 import { QueryEngine } from "./core/engine.js";
-import type { SyncResult, SyncProgressCallback } from "./core/engine.js";
+import type {
+  SyncOptions,
+  SyncProgressCallback,
+  SyncResult,
+} from "./core/engine.js";
 import { RateLimiter } from "./core/rate-limiter.js";
 import type { PluginFunction } from "./plugin/api.js";
 import { resolvePluginExport } from "./plugin/api.js";
@@ -137,14 +141,20 @@ export class Dripline {
 
   /**
    * Sync plugin data into persistent storage.
+   *
    * Pass table names as keys with their required params as values.
    * Omit to sync all tables.
+   *
+   * Second argument is either a progress callback (back-compat) or an
+   * options object `{ signal?, onProgress? }`. Use the options form
+   * when you need to cancel a long-running sync — aborting the signal
+   * causes sync() to throw an AbortError at the next checkpoint.
    */
   async sync(
     params?: Record<string, Record<string, any>>,
-    onProgress?: SyncProgressCallback,
+    optsOrCallback?: SyncOptions | SyncProgressCallback,
   ): Promise<SyncResult> {
-    return this._engine.sync(params, onProgress);
+    return this._engine.sync(params, optsOrCallback);
   }
 
   /** Close the database. Does NOT close an externally-provided database. */

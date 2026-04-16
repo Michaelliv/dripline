@@ -32,6 +32,14 @@ export interface QueryContext {
   limit?: number;
   /** High-water mark from previous sync. null on first sync, undefined during query(). */
   cursor?: { column: string; value: any } | null;
+  /**
+   * Abort signal for the active sync call. Plugins that make HTTP
+   * requests should forward this to `fetch({ signal })` so in-flight
+   * requests cancel immediately when the caller (e.g. a worker being
+   * SIGTERMed) aborts. Absent for query() calls, which are typically
+   * short enough that cancellation isn't needed.
+   */
+  signal?: AbortSignal;
 }
 
 export type ListFunc = (
