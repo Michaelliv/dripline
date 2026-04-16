@@ -174,7 +174,12 @@ describe("connection CLI", () => {
   beforeEach(() => setup());
   afterEach(() => teardown());
 
-  it("connection add + list + remove", () => {
+  // node:test's default per-test timeout is 5s, but each `npx tsx`
+  // cold-start takes ~2s and these tests shell out 3–4 times. 20s
+  // leaves plenty of headroom without masking a genuine hang. Applied
+  // per-`it()` because describe-level timeout isn't honored by bun's
+  // node:test shim.
+  it("connection add + list + remove", { timeout: 20_000 }, () => {
     createDriplineDir();
 
     execSync(
@@ -206,7 +211,7 @@ describe("connection CLI", () => {
     assert.deepEqual(JSON.parse(listOut2), []);
   });
 
-  it("connection add with multiple --set flags", () => {
+  it("connection add with multiple --set flags", { timeout: 20_000 }, () => {
     createDriplineDir();
 
     execSync(
@@ -226,7 +231,7 @@ describe("connection CLI", () => {
     assert.equal(connections[0].config.secret_key, "sk");
   });
 
-  it("connection list masks token values", () => {
+  it("connection list masks token values", { timeout: 20_000 }, () => {
     createDriplineDir();
 
     execSync(

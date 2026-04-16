@@ -195,11 +195,15 @@ describe("dripline query --remote (end-to-end)", { concurrency: false }, () => {
       "ok",
       `setup: run should succeed, got ${r[0].status}`,
     );
-    const c = await compact({ quiet: true });
+    // Filter to our table explicitly. The module-level plugin registry
+    // is shared across test files, so without a filter `compact` would
+    // also iterate foreign tables (e.g. compact.test.ts's `items`) and
+    // return their "no raw files" skips as c[0], masking our success.
+    const c = await compact({ quiet: true, tables: ["events"] });
     assert.equal(
       c[0].status,
       "ok",
-      `setup: compact should succeed, got ${c[0].status}`,
+      `setup: compact should succeed, got ${c[0].status} (${c[0].reason ?? "-"})`,
     );
     return project;
   }

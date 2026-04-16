@@ -18,20 +18,33 @@ export function findConfigDir(): string | null {
   }
 }
 
+/**
+ * Return a deep copy of the module-level defaults. Using `{ ...DEFAULT_CONFIG }`
+ * (shallow spread) is a bug: `connections`, `lanes`, `cache`, etc. share
+ * their references, so any caller that mutates the returned config
+ * (e.g. addConnection pushing into `connections`) poisons the default
+ * for the rest of the process. structuredClone gives every caller an
+ * isolated copy.
+ */
+function freshDefaults(): DriplineConfig {
+  return structuredClone(DEFAULT_CONFIG);
+}
+
 export function loadConfig(): DriplineConfig {
   const configDir = findConfigDir();
-  if (!configDir) return { ...DEFAULT_CONFIG };
+  if (!configDir) return freshDefaults();
 
   const configFile = join(configDir, CONFIG_FILE);
-  if (!existsSync(configFile)) return { ...DEFAULT_CONFIG };
+  if (!existsSync(configFile)) return freshDefaults();
 
   const raw = JSON.parse(readFileSync(configFile, "utf-8"));
+  const defaults = freshDefaults();
   return {
-    ...DEFAULT_CONFIG,
+    ...defaults,
     ...raw,
-    cache: { ...DEFAULT_CONFIG.cache, ...raw.cache },
-    rateLimits: { ...DEFAULT_CONFIG.rateLimits, ...raw.rateLimits },
-    lanes: { ...DEFAULT_CONFIG.lanes, ...raw.lanes },
+    cache: { ...defaults.cache, ...raw.cache },
+    rateLimits: { ...defaults.rateLimits, ...raw.rateLimits },
+    lanes: { ...defaults.lanes, ...raw.lanes },
   };
 }
 
