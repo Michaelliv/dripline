@@ -77,6 +77,8 @@ export { LeaseStore } from "./core/lease.js";
 export type { Lease, LeaseConfig } from "./core/lease.js";
 export { Dripline } from "./sdk.js";
 export type { DriplineOptions } from "./sdk.js";
+export { QueryConfigError, runQuery } from "./commands/query.js";
+export type { OutputFormat, QueryOptions } from "./commands/query.js";
 export type { ExecOptions, ExecResult, OutputParser } from "./utils/cli.js";
 export { commandExists, syncExec } from "./utils/cli.js";
 export { formatCsv, formatJson, formatLine } from "./utils/formatters.js";
