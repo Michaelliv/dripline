@@ -713,6 +713,15 @@ export class QueryEngine {
           result.durationMs,
         );
       } catch (err: any) {
+        // Abort is a directive from the caller to stop, not a sync
+        // failure. We don't record it in _dripline_sync — that would
+        // overwrite any prior successful cursor with null and force a
+        // full backfill on the next sync. Re-throw so the caller sees
+        // the abort and can take whatever action it wants (the
+        // orchestrator, for example, falls into its lease-release
+        // catch block). Subsequent tables are not processed.
+        if (err?.name === "AbortError") throw err;
+
         const durationMs = Date.now() - start;
         errors.push({
           table: tableName,
