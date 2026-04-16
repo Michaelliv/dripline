@@ -8,9 +8,21 @@
     "plugins/*"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./utils/http": "./dist/utils/http.js",
-    "./utils/cli": "./dist/utils/cli.js"
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./utils/http": {
+      "bun": "./src/utils/http.ts",
+      "types": "./src/utils/http.ts",
+      "default": "./dist/utils/http.js"
+    },
+    "./utils/cli": {
+      "bun": "./src/utils/cli.ts",
+      "types": "./src/utils/cli.ts",
+      "default": "./dist/utils/cli.js"
+    }
   },
   "bin": {
     "dripline": "./dist/main.js"

@@ -51,8 +51,25 @@ export type {
   RateLimitConfig,
   TableDef,
 } from "./plugin/types.js";
-export { Remote } from "./core/remote.js";
-export type { RemoteConfig } from "./config/types.js";
+export { Remote, resolveRemote } from "./core/remote.js";
+export type { ResolvedRemote } from "./core/remote.js";
+export type {
+  LaneConfig,
+  LaneTable,
+  RemoteConfig,
+} from "./config/types.js";
+export {
+  DEFAULT_MAX_RUNTIME_MS,
+  laneLeaseName,
+  laneSchema,
+  laneStatePath,
+  parseInterval,
+  validateLane,
+  validateLanes,
+} from "./core/lanes.js";
+export type { ValidatedLane } from "./core/lanes.js";
+export { LeaseStore } from "./core/lease.js";
+export type { Lease, LeaseConfig } from "./core/lease.js";
 export { Dripline } from "./sdk.js";
 export type { DriplineOptions } from "./sdk.js";
 export type { ExecOptions, ExecResult, OutputParser } from "./utils/cli.js";
