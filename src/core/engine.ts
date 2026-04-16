@@ -361,7 +361,12 @@ export class QueryEngine {
       rows = cached;
     } else {
       const connection = this.resolveConnection(reg);
-      const ctx: QueryContext = { connection, quals, columns: visibleColumns };
+      const ctx: QueryContext = {
+        connection,
+        quals,
+        columns: visibleColumns,
+        fetch: connection.fetch ?? globalThis.fetch,
+      };
 
       this.rateLimiter.acquireSync(pluginName);
 
@@ -846,6 +851,7 @@ export class QueryEngine {
       quals,
       columns: visibleColumns,
       signal,
+      fetch: connection.fetch ?? globalThis.fetch,
     };
     if (table.cursor) {
       ctx.cursor = cursorValue != null ? { column: table.cursor, value: cursorValue } : null;

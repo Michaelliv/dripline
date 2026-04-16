@@ -23,6 +23,17 @@ export interface ConnectionConfig {
   name: string;
   plugin: string;
   config: Record<string, any>;
+  /**
+   * Optional fetch override. When present, the engine threads this
+   * through to `QueryContext.fetch` so plugins can route HTTP through
+   * a proxy, a rotating worker network, a mock, etc. without the
+   * plugin knowing who's on the other side.
+   *
+   * Absent (the common case) means plugins see `globalThis.fetch`.
+   * Callers (e.g. dripyard wiring in flaregun) set this at runtime
+   * — it's never serialized in config.json.
+   */
+  fetch?: typeof globalThis.fetch;
 }
 
 export interface QueryContext {
@@ -40,6 +51,14 @@ export interface QueryContext {
    * short enough that cancellation isn't needed.
    */
   signal?: AbortSignal;
+  /**
+   * Fetch function plugins should use for all outbound HTTP. Equal to
+   * `connection.fetch` when the caller provided one, `globalThis.fetch`
+   * otherwise — so plugins can always call `ctx.fetch(...)` without a
+   * nullish check. Honor this instead of the global to stay compatible
+   * with proxy/rotation/mocking setups at the caller.
+   */
+  fetch: typeof globalThis.fetch;
 }
 
 export type ListFunc = (
