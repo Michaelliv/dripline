@@ -19,6 +19,8 @@ jobs:
         with:
           bun-version: latest
       - run: bun install
+      # dripyard imports from dripline's dist/ — build dripline first.
+      - run: bun --filter dripline build
       - run: bun --filter ${{ matrix.package }} build
       - run: bun --filter ${{ matrix.package }} test
 
