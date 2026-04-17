@@ -4,7 +4,7 @@ Empty directory → querying APIs → dripyard deployed. Ten minutes if the wind
 
 ## 1. Prerequisites
 
-You need [Bun](https://bun.sh) 1.1+ on PATH. Node works for running the CLIs, but the build tooling is Bun-native.
+You need [Bun](https://bun.sh) 1.1+ on PATH. The CLIs run on Bun — their shebang is `#!/usr/bin/env bun`. You can install via `npm` or `bun`, but Bun must be available at runtime.
 
 ```bash
 bun --version   # should print a version

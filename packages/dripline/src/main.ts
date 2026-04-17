@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { createRequire } from "node:module";
 import { Command } from "commander";
