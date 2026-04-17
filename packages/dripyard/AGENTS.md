@@ -73,7 +73,7 @@ Three layers:
 - **Workspace as source of truth**: `.dripline/` on disk owns plugins, connections, lanes, remote. SQLite is a live cache. Wipe + restart produces identical state.
 - **VexClient abstraction**: `LocalVexClient` in-process, `SocketVexClient` over unix socket. Orchestrator is transport-agnostic — same code runs in dashboard or standalone worker.
 - **Unix socket + TCP duality**: server binds the same handler on `port` (UI/CLI) and on `<tmpdir>/dripyard-<port>.sock` (local workers). Identical surface area.
-- **Embedded static UI**: the built React bundle at `dist/app/ui/` is served from the same `Bun.serve` handler as the `/vex` API. No separate Vite process in production; `/assets/*` gets `immutable` cache, everything else revalidates, and client-side routes (no extension, no `/vex` prefix) fall through to `index.html`.
+- **Embedded static UI**: the built React bundle at `dist/app/ui/` is served from the same `Bun.serve` handler as the engine endpoints (`/query`, `/mutate`, `/subscribe`, `/webhook/*`). No separate Vite process in production; `/assets/*` gets `immutable` cache, everything else revalidates, and client-side routes (no extension, no engine-endpoint match) fall through to `index.html`.
 - **Graceful drain**: SIGTERM on a worker → setDraining → wait for in-flight runs with grace window → AbortController fires if timeout → dripline throws AbortError at next checkpoint → orchestrator releases R2 lease → deregister → exit.
 - **Pluggable spawner**: `workers.spawn` mutation calls configured `Spawner`. `ForkSpawner` handles local child processes; cloud spawners (fly, k8s) implement the same interface.
 
