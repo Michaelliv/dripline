@@ -10,7 +10,7 @@ This repo is a bun workspace containing three things:
 
 - **[`packages/dripline`](packages/dripline/)** — the engine, CLI, and SDK. Turn APIs, CLIs, and cloud services into DuckDB tables. Zero plugins in core.
 - **[`packages/dripyard`](packages/dripyard/)** — dashboard + worker supervisor. Point it at a `.dripline/` workspace, get a reactive UI over lanes, runs, workers, catalog, warehouse, and an SQL surface.
-- **[`packages/plugins`](packages/plugins/)** — 55+ first-party plugins (github, kubectl, cloudflare, vercel, stripe, datadog, sentry, slack, …). Installed directly from this repo by URL: `dripline plugin install git:github.com/Michaelliv/dripline#packages/plugins/<name>`.
+- **[`packages/plugins`](packages/plugins/)** — 58 first-party plugins (github, kubectl, cloudflare, vercel, stripe, datadog, sentry, slack, …). Installed directly from this repo by URL: `dripline plugin install git:github.com/Michaelliv/dripline#packages/plugins/<name>`.
 
 ## Quickstart
 
@@ -38,7 +38,7 @@ packages/
     github/           ← installed via git:...#packages/plugins/github
     cloudflare/
     stripe/
-    …                 ← 55+ plugins, one per directory, not on npm
+    …                 ← 58 plugins, one per directory, not on npm
 ```
 
 Internal dependencies use `workspace:*` — editing `packages/dripline` immediately reflects in `packages/dripyard` and every plugin, no publish needed.

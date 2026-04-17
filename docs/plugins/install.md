@@ -25,7 +25,7 @@ Installed plugins are recorded in `.dripline/plugins.json` and cached under `.dr
 By default you get the default branch. Pin by appending `@<ref>` before the `#subpath`:
 
 ```bash
-dripline plugin install git:github.com/Michaelliv/dripline@v0.7.0#packages/plugins/github
+dripline plugin install git:github.com/Michaelliv/dripline@v0.9.0#packages/plugins/github
 ```
 
 For reproducible deploys, always pin.

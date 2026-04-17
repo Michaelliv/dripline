@@ -58,7 +58,7 @@ bun --filter dripyard build:ui                      # build the React bundle
 bun --filter dripyard dev -- serve <workspace-dir>  # http://localhost:3457
 
 # If you want HMR while hacking on the UI:
-bun --filter dripyard dev:ui                        # Vite on :5173, proxies /vex
+bun --filter dripyard dev:ui                        # Vite on :5173, proxies engine endpoints to :3457
 ```
 
 ### Standalone worker
@@ -84,7 +84,7 @@ dripyard status                   # orchestrator snapshot
 | Env var | Default | Description |
 |---------|---------|-------------|
 | `DRIPYARD_PORT` | `3457` | Server port (UI + engine endpoints + `/health`) |
-| `DRIPYARD_DB` | `:memory:` | SQLite path for operational state (runs, workers, progress) |
+| `DRIPYARD_DB` | `:memory:` | SQLite path for operational state (runs, workers, progress). **Set to a path on a mounted volume in production** — the `:memory:` default wipes on every restart. |
 | `DRIPYARD_WORKER` | `worker-<hostname>` | Embedded worker name |
 | `DRIPYARD_URL` | `http://localhost:3457` | Server URL for CLI commands |
 | `DRIPYARD_SOCKET` | `<tmpdir>/dripyard-<port>.sock` | Unix socket for local workers |

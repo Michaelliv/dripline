@@ -205,4 +205,4 @@ That's it. No npm publish needed. If the repo contains multiple plugins, use `#s
 
 ## Inspiration
 
-Read the plugins in [`packages/plugins/`](../../packages/plugins/) — 55 of them covering most patterns you're likely to hit. `github` is a good model for paginated REST APIs, `docker` for CLI wrapping, `pi` for reading from a local DuckDB/SQLite.
+Read the plugins in [`packages/plugins/`](../../packages/plugins/) — 58 of them covering most patterns you're likely to hit. `github` is a good model for paginated REST APIs, `docker` for CLI wrapping, `pi` for reading from a local DuckDB/SQLite.

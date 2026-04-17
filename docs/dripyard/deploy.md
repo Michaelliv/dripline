@@ -17,9 +17,19 @@ Dripyard is a single Bun HTTP server that serves both the API and the embedded R
 FROM oven/bun:1.3 AS base
 WORKDIR /app
 
+# DuckDB's httpfs extension uses libcurl, which needs a system CA
+# bundle for HTTPS to R2/S3. The Bun base image doesn't ship one;
+# without this, SHOW TABLES and read_parquet over https fail with
+# "Problem with the SSL CA cert".
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
+
 # Install CLIs globally, pinned for reproducibility
-ARG DRIPLINE_VERSION=0.8.0
-ARG DRIPYARD_VERSION=0.8.0
+ARG DRIPLINE_VERSION=0.9.0
+ARG DRIPYARD_VERSION=0.9.0
 RUN bun install -g dripline@${DRIPLINE_VERSION} dripyard@${DRIPYARD_VERSION}
 
 # Bring in your workspace
@@ -27,8 +37,8 @@ COPY .dripline ./.dripline
 # ^ If your plugins or config have local paths, copy those too.
 
 # (optional) install plugins at build time so the image is self-contained
-RUN dripline plugin install git:github.com/Michaelliv/dripline@v0.8.0#packages/plugins/github \
- && dripline plugin install git:github.com/Michaelliv/dripline@v0.8.0#packages/plugins/stripe
+RUN dripline plugin install git:github.com/Michaelliv/dripline@v0.9.0#packages/plugins/github \
+ && dripline plugin install git:github.com/Michaelliv/dripline@v0.9.0#packages/plugins/stripe
 
 EXPOSE 3457
 CMD ["sh", "-c", "dripyard serve --port ${PORT:-3457}"]
@@ -38,7 +48,7 @@ Tips:
 
 - **Pin plugin versions** with `@<tag>` so the image is reproducible.
 - **Install plugins at build time**, not at first boot, so the first request isn't blocked on a git clone.
-- Mount `/app/.dripyard` as a volume in production so DuckDB files and artifacts survive redeploys.
+- **Mount `/app/.dripyard` as a volume AND set `DRIPYARD_DB`.** Just mounting the volume isn't enough — dripyard defaults to an in-memory SQLite. Set `DRIPYARD_DB=/app/.dripyard/dripyard.db` to persist lane runs, worker telemetry, and job state across restarts.
 
 ## Running it
 
@@ -47,6 +57,7 @@ docker build -t my-dripyard .
 docker run -d \
   -p 3457:3457 \
   -v dripyard-data:/app/.dripyard \
+  -e DRIPYARD_DB=/app/.dripyard/dripyard.db \
   -e DRIPYARD_TOKEN="$(openssl rand -base64 32)" \
   -e GITHUB_TOKEN=ghp_xxx \
   -e STRIPE_API_KEY=sk_xxx \
@@ -60,7 +71,7 @@ Hit `http://localhost:3457/`, paste the token into the login form, and you're in
 
 Dripyard 0.8+ ships with a built-in token gate. When `DRIPYARD_TOKEN` is set:
 
-- Browsers get redirected to `/login` — a minimal form that POSTs the token and sets an HTTP-only, `SameSite=Strict`, `Secure` cookie (when behind HTTPS).
+- Browsers get redirected to `/login` — a minimal form that POSTs the token and sets an HTTP-only, `SameSite=Lax` cookie (marked `Secure` when the request arrives over HTTPS).
 - CLI / curl / anything else sends `Authorization: Bearer <token>`.
 - `/health` is always open so platform healthchecks work.
 - Failed logins rate-limit per IP (5 / minute).
@@ -71,11 +82,11 @@ For multi-user access, audit trails, or SSO, put Cloudflare Access, Tailscale, o
 
 ## Fly.io, Railway, Render
 
-All three accept the Dockerfile above unchanged. Each has its own volume + secrets story:
+All three accept the Dockerfile above unchanged. Each has its own volume + secrets story — and each needs `DRIPYARD_DB=/app/.dripyard/dripyard.db` set alongside the mount, not just the mount itself:
 
-- **Fly**: `fly volumes create dripyard_data --size 1`, then mount `/app/.dripyard` to it. Secrets via `fly secrets set GITHUB_TOKEN=...`.
-- **Railway**: add a volume in the service UI, env vars in settings.
-- **Render**: add a disk to the service, mount at `/app/.dripyard`, env vars in the dashboard.
+- **Fly**: `fly volumes create dripyard_data --size 1`, then mount `/app/.dripyard` to it. Secrets via `fly secrets set GITHUB_TOKEN=... DRIPYARD_DB=/app/.dripyard/dripyard.db ...`.
+- **Railway**: add a volume in the service UI, env vars (including `DRIPYARD_DB`) in settings.
+- **Render**: add a disk to the service, mount at `/app/.dripyard`, set `DRIPYARD_DB` in the dashboard env vars. A `render.yaml` Blueprint works well here — declare the disk + env vars once, commit, let Render apply. The Blueprint shape is in the [dripline-japanika repo](https://github.com/Michaelliv/dripline-japanika/blob/main/render.yaml).
 
 ## Kubernetes sketch
 
@@ -89,9 +100,11 @@ spec:
     spec:
       containers:
         - name: dripyard
-          image: ghcr.io/you/my-dripyard:v0.7.0
+          image: ghcr.io/you/my-dripyard:v0.9.0
           ports: [{ containerPort: 3457 }]
           env:
+            - name: DRIPYARD_DB
+              value: /app/.dripyard/dripyard.db
             - name: GITHUB_TOKEN
               valueFrom: { secretKeyRef: { name: dripyard-secrets, key: github_token } }
           volumeMounts:
@@ -128,4 +141,4 @@ Back up the entire `.dripyard/` directory. That's your database (DuckDB files) p
 2. Rebuild, roll out.
 3. Schema migrations (if any) run on startup.
 
-Lockstep versioning means `dripline` and `dripyard` always match — don't mix a `0.7` server with `0.8` plugins.
+Lockstep versioning means `dripline` and `dripyard` always match — don't mix a `0.8` server with a `0.9` workspace.

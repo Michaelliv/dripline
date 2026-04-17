@@ -105,7 +105,9 @@ The UI is served directly from the Bun process — no separate dev server.
 
 ## 9. Deploy
 
-Single Bun process, no database required beyond DuckDB files in `.dripyard/`. See [Deploying dripyard](./dripyard/deploy.md) for a Dockerfile + generic deployment recipe.
+Single Bun process. Mount `.dripyard/` as a persistent volume and set `DRIPYARD_DB=/app/.dripyard/dripyard.db` so lane runs, worker telemetry, and job state survive container restarts — without that env var dripyard keeps state in memory and every redeploy wipes the dashboard back to zero.
+
+See [Deploying dripyard](./dripyard/deploy.md) for a Dockerfile + generic deployment recipe.
 
 ## 10. Release a new version (maintainers)
 
@@ -116,7 +118,7 @@ git tag vX.Y.Z
 git push origin main --tags
 ```
 
-CI tests then publishes `dripline` to npm. `dripyard` currently needs one manual `npm publish --access public` from `packages/dripyard/` — the granular automation token can't create new package versions on that name without a per-package grant; once we move to a classic automation token this becomes automatic too.
+CI (`.github/workflows/release.yml`) tests both packages, then publishes `dripline` and `dripyard` to npm using the `NPM_TOKEN` GitHub secret. The token needs to be a **classic automation token** (granular tokens can't create the first version on a new package name). Tags containing `rc`, `alpha`, or `beta` publish under `--tag next` instead of `latest`.
 
 Plugins aren't published — consumers always pin to a git ref.
 
