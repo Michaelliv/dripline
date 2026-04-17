@@ -17,7 +17,7 @@ export type {
 } from "./config/types.js";
 export { DEFAULT_CONFIG } from "./config/types.js";
 export { configureCache, QueryCache, queryCache } from "./core/cache.js";
-export type { Appender, Row } from "./core/db.js";
+export type { Appender, DatabaseOptions, Row } from "./core/db.js";
 export { Database } from "./core/db.js";
 export type {
   SyncOptions,

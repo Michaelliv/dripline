@@ -20,10 +20,10 @@
  */
 
 import {
+  type DuckDBAppender as RawAppender,
   type DuckDBConnection,
   DuckDBInstance,
   type DuckDBValue,
-  type DuckDBAppender as RawAppender,
 } from "@duckdb/node-api";
 
 /**
@@ -73,28 +73,112 @@ function toBindValue(v: unknown): DuckDBValue {
 export type Row = Record<string, unknown>;
 
 /**
+ * Options for {@link Database.create}. All fields optional — the
+ * defaults match DuckDB's own defaults (read/write, all cores).
+ *
+ * The binding's native config is `Record<string, string>`; this type
+ * exposes the handful we actually want to type-check, plus a
+ * `duckdbOptions` escape hatch for anything else (see
+ * https://duckdb.org/docs/sql/configuration for the full list).
+ */
+export interface DatabaseOptions {
+  /** Shorthand for `accessMode: "read_only"`. */
+  readOnly?: boolean;
+  /**
+   * Explicit DuckDB access mode. Overrides `readOnly` when both are
+   * set. `"automatic"` lets DuckDB decide based on file permissions.
+   */
+  accessMode?: "read_only" | "read_write" | "automatic";
+  /** Number of worker threads. Default: one per CPU core. */
+  threads?: number;
+  /** Memory cap for the instance (e.g. `"1GB"`, `"512MB"`). */
+  memoryLimit?: string;
+  /**
+   * Extra raw DuckDB config keys. Merged on top of the friendly
+   * options above — so setting both `threads: 4` and
+   * `duckdbOptions: { threads: "8" }` picks the raw value.
+   */
+  duckdbOptions?: Record<string, string>;
+}
+
+/**
+ * Translate {@link DatabaseOptions} into the raw string map the
+ * binding expects. Friendly fields lose to `duckdbOptions` when both
+ * set the same key — the escape hatch is authoritative.
+ */
+function buildDuckDBOptions(
+  opts: DatabaseOptions,
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  const mode = opts.accessMode ?? (opts.readOnly ? "read_only" : undefined);
+  if (mode) out.access_mode = mode;
+  if (opts.threads != null) out.threads = String(opts.threads);
+  if (opts.memoryLimit) out.memory_limit = opts.memoryLimit;
+  Object.assign(out, opts.duckdbOptions ?? {});
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Database — a connection-oriented handle that mimics the historical
  * `duckdb-async` shape (`create`, `exec`, `all`, `run`, `close`).
  *
- * One Database owns one DuckDBInstance and one DuckDBConnection. We
- * only ever opened one connection per database in the legacy code, so
- * there's no fan-out concurrency to preserve.
+ * One Database normally owns one DuckDBInstance and one
+ * DuckDBConnection. The {@link Database.fromConnection} factory
+ * returns a non-owning handle — useful when the caller already has a
+ * connection from somewhere else (e.g. an embedding engine) and wants
+ * to reuse its buffer pool / extensions instead of opening a second
+ * instance on the same file.
  */
 export class Database {
-  private instance: DuckDBInstance;
+  private instance: DuckDBInstance | null;
   private conn: DuckDBConnection;
   private closed = false;
+  private owned: boolean;
 
-  private constructor(instance: DuckDBInstance, conn: DuckDBConnection) {
+  private constructor(
+    instance: DuckDBInstance | null,
+    conn: DuckDBConnection,
+    owned: boolean,
+  ) {
     this.instance = instance;
     this.conn = conn;
+    this.owned = owned;
   }
 
-  /** Open a new in-memory or file-backed database. */
-  static async create(path = ":memory:"): Promise<Database> {
-    const inst = await DuckDBInstance.create(path);
+  /**
+   * Open a new in-memory or file-backed database. Pass
+   * {@link DatabaseOptions} to configure access mode, threads, or
+   * memory limits — the old signature `create(path)` still works,
+   * unchanged.
+   *
+   * @example
+   *   const db = await Database.create("./data.duckdb", { readOnly: true });
+   *   const mem = await Database.create(":memory:", { threads: 4 });
+   */
+  static async create(
+    path = ":memory:",
+    options: DatabaseOptions = {},
+  ): Promise<Database> {
+    const duckdbOpts = buildDuckDBOptions(options);
+    const inst = duckdbOpts
+      ? await DuckDBInstance.create(path, duckdbOpts)
+      : await DuckDBInstance.create(path);
     const conn = await inst.connect();
-    return new Database(inst, conn);
+    return new Database(inst, conn, true);
+  }
+
+  /**
+   * Wrap an existing {@link DuckDBConnection} without owning it. The
+   * resulting Database's `close()` is a no-op for the underlying
+   * binding — the caller is responsible for closing the connection
+   * (and its instance) through whatever path created them.
+   *
+   * Use this when you want dripline to share a DuckDB instance with
+   * another consumer (e.g. vex's analytical adapter) instead of
+   * opening a second instance on the same file.
+   */
+  static fromConnection(conn: DuckDBConnection): Database {
+    return new Database(null, conn, false);
   }
 
   /**
@@ -150,19 +234,34 @@ export class Database {
   }
 
   /**
-   * Close the connection and the instance. Idempotent. Closing the
-   * instance is what actually frees the database; closing only the
-   * connection leaves the instance pinned. Both are sync in the
-   * underlying binding.
+   * The underlying DuckDB connection. Escape hatch for callers that
+   * need an API this wrapper doesn't expose. For a non-owning handle
+   * (see {@link Database.fromConnection}) this returns the borrowed
+   * connection; owning it outside dripline's lifecycle is unsafe.
+   */
+  getConnection(): DuckDBConnection {
+    return this.conn;
+  }
+
+  /**
+   * Close the connection and the instance. Idempotent. For a handle
+   * returned by {@link Database.fromConnection}, close is a no-op —
+   * the owner (whoever created the underlying connection) is
+   * responsible for teardown.
+   *
+   * Closing the instance is what actually frees the database; closing
+   * only the connection leaves the instance pinned. Both are sync in
+   * the underlying binding.
    */
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    if (!this.owned) return;
     try {
       this.conn.closeSync();
     } catch {}
     try {
-      this.instance.closeSync();
+      this.instance?.closeSync();
     } catch {}
   }
 }
