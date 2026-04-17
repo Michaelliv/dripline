@@ -1,6 +1,6 @@
 {
   "name": "dripyard",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "Dashboard + worker supervisor for dripline projects. Reactive UI over .dripline/ workspaces, built on vex-core + dripline + flaregun.",
   "type": "module",
   "main": "dist/index.js",
