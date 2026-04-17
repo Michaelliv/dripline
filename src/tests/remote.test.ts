@@ -252,4 +252,42 @@ describe("Remote (S3-compatible)", { concurrency: false }, () => {
     const m = await remote.readManifest("nope");
     assert.equal(m, null);
   });
+
+  // Regression — refreshManifest used to fail with
+  // "JSON.stringify cannot serialize BigInt" whenever the partition
+  // column came back from DuckDB as BIGINT (e.g. integer ID columns
+  // landed via the appender). The values are valid JSON numbers; the
+  // bug was passing raw bigints through to JSON.stringify.
+  ift("refreshManifest serializes BIGINT partition values", async () => {
+    const prefix = freshPrefix("bigint-manifest");
+    const remote = newRemote(prefix);
+    const db = await Database.create(":memory:");
+    try {
+      await remote.attach(db);
+      // Write one curated parquet directly with a BIGINT partition
+      // column. We bypass compact() so the test isolates the
+      // manifest-write path.
+      const url = remote.s3(
+        "curated/bg/section_id=42/data.parquet",
+      );
+      await db.exec(`
+        COPY (SELECT 1::INTEGER AS id, 42::BIGINT AS section_id, 'x' AS name)
+        TO '${url}' (FORMAT PARQUET);
+      `);
+      // refreshManifest reads MIN/MAX of the partition column —
+      // those come back as BigInt and (used to) blow up JSON.stringify.
+      const files = await remote.refreshManifest(db, "bg", ["section_id"]);
+      assert.equal(files, 1);
+      const manifest = await remote.readManifest("bg");
+      assert.ok(manifest, "manifest should be readable after write");
+      assert.equal(manifest.files.length, 1);
+      // The min/max values must round-trip as JSON-safe numbers, not be
+      // dropped or coerced to a string of garbage.
+      const f = manifest.files[0] as Record<string, unknown>;
+      assert.equal(Number(f.min_section_id), 42);
+      assert.equal(Number(f.max_section_id), 42);
+    } finally {
+      await db.close();
+    }
+  });
 });

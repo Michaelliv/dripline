@@ -423,8 +423,12 @@ export class Remote {
           row_count: Number(r.row_count),
         };
         for (const c of partitionBy) {
-          f[`min_${c}`] = r[`min_${c}`];
-          f[`max_${c}`] = r[`max_${c}`];
+          // DuckDB returns BIGINT columns as native bigint, which
+          // JSON.stringify refuses to serialize. Coerce min/max via
+          // jsonSafe so integer-typed partition keys (section_id,
+          // org_id, etc.) round-trip cleanly.
+          f[`min_${c}`] = jsonSafe(r[`min_${c}`]);
+          f[`max_${c}`] = jsonSafe(r[`max_${c}`]);
         }
         return f;
       }),
@@ -511,6 +515,22 @@ export class Remote {
 /** Single-quote escape for embedding strings in DuckDB DDL. */
 function esc(s: string): string {
   return s.replace(/'/g, "''");
+}
+
+/**
+ * Coerce a DuckDB-returned value into something `JSON.stringify` can
+ * write. The only currently-troublesome type is `bigint`: BIGINT
+ * columns surface as native bigint via `getRowObjectsJS`, and bigint
+ * is a hard error for JSON.stringify. Numbers up to 2^53 round-trip
+ * losslessly via Number(); larger ones we keep as strings so manifest
+ * readers don't silently truncate. Everything else passes through.
+ */
+function jsonSafe(v: unknown): unknown {
+  if (typeof v !== "bigint") return v;
+  return v <= BigInt(Number.MAX_SAFE_INTEGER) &&
+    v >= BigInt(Number.MIN_SAFE_INTEGER)
+    ? Number(v)
+    : v.toString();
 }
 
 /** Filesystem-safe ISO-8601 timestamp suitable for object keys. */
