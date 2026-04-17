@@ -1,4 +1,4 @@
-import { Database } from "duckdb-async";
+import { Database } from "./core/db.js";
 import type { DriplineConfig } from "./config/types.js";
 import { DEFAULT_CONFIG } from "./config/types.js";
 import { QueryCache } from "./core/cache.js";

@@ -1,6 +1,6 @@
 {
   "name": "dripline",
-  "version": "0.7.0-rc.7",
+  "version": "0.7.0-rc.8",
   "description": "Query anything, one drip at a time",
   "type": "module",
   "main": "dist/index.js",
@@ -9,18 +9,18 @@
   ],
   "exports": {
     ".": {
-      "bun": "./src/index.ts",
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./utils/http": {
-      "bun": "./src/utils/http.ts",
-      "types": "./src/utils/http.ts",
+      "types": "./dist/utils/http.d.ts",
+      "import": "./dist/utils/http.js",
       "default": "./dist/utils/http.js"
     },
     "./utils/cli": {
-      "bun": "./src/utils/cli.ts",
-      "types": "./src/utils/cli.ts",
+      "types": "./dist/utils/cli.d.ts",
+      "import": "./dist/utils/cli.js",
       "default": "./dist/utils/cli.js"
     }
   },
@@ -31,7 +31,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && npm run build --workspaces --if-present",
+    "build": "tsc",
+    "build:plugins": "npm run build --workspaces --if-present",
     "prepublishOnly": "npm run build",
     "dev": "npx tsx src/main.ts",
     "test": "npx tsx --test src/tests/**/*.test.ts && npm test --workspaces --if-present",
@@ -70,12 +71,10 @@
     "typescript": "^5.8.0"
   },
   "dependencies": {
-    "apache-arrow": "^21.1.0",
+    "@duckdb/node-api": "^1.5.2-r.1",
     "aws4fetch": "^1.0.20",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
-    "duckdb": "^1.4.4",
-    "duckdb-async": "^1.4.2",
     "nanoid": "^5.1.6"
   }
 }

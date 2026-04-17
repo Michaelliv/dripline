@@ -269,8 +269,7 @@ await dl.close();
 Sync plugin data into a persistent DuckDB database with cursor-based incremental updates:
 
 ```typescript
-import { Database } from "duckdb-async";
-import { Dripline } from "dripline";
+import { Database, Dripline } from "dripline";
 
 const db = await Database.create("./analytics.duckdb");
 const dl = await Dripline.create({

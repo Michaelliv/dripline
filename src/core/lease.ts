@@ -148,6 +148,27 @@ export class LeaseStore {
   }
 
   /**
+   * Read the current lease doc without trying to acquire. Returns
+   * null if the key doesn't exist. Used by read-only inspection
+   * (`dripline lane status`) — never mutates remote state.
+   */
+  async inspect(
+    name: string,
+  ): Promise<{ holder: string; expiresAt: number; etag: string } | null> {
+    const res = await this.fetchWithRetry(this.url(name), { method: "GET" });
+    if (res.status === 404) return null;
+    if (res.status !== 200) {
+      throw new Error(`lease GET failed: ${res.status} ${await res.text()}`);
+    }
+    const doc = (await res.json()) as LeaseDoc;
+    return {
+      holder: doc.holder,
+      expiresAt: doc.expires_at,
+      etag: res.headers.get("etag") ?? "",
+    };
+  }
+
+  /**
    * Try to acquire the lease for `name`. Returns a Lease on success, null
    * if someone else holds it.
    *

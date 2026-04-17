@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "node:test";
-import { Database } from "duckdb-async";
+import { Database } from "../core/db.js";
 import type { PluginDef, QueryContext } from "../plugin/types.js";
 import { Dripline } from "../sdk.js";
 

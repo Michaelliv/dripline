@@ -10,7 +10,7 @@
  * no leader election. Adding workers is a deployment-only change.
  */
 
-import { Database } from "duckdb-async";
+import { Database } from "../core/db.js";
 import { loadConfig } from "../config/loader.js";
 import {
   laneLeaseName,

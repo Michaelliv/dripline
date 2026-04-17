@@ -1,5 +1,3 @@
-import { Database } from "duckdb-async";
-import * as arrow from "apache-arrow";
 import { applyEnvOverrides, resolveEnvConnection } from "../config/loader.js";
 import type { DriplineConfig } from "../config/types.js";
 import type { PluginRegistry } from "../plugin/registry.js";
@@ -11,6 +9,7 @@ import type {
   TableDef,
 } from "../plugin/types.js";
 import { QueryCache } from "./cache.js";
+import { type Appender, Database } from "./db.js";
 import { RateLimiter } from "./rate-limiter.js";
 
 interface RegisteredTable {
@@ -114,7 +113,6 @@ export class QueryEngine {
       this.db = await Database.create(":memory:");
       this.dbSchema = options?.schema;
     }
-    await this.db.exec("INSTALL arrow FROM community; LOAD arrow;");
 
     for (const [scope, rl] of Object.entries(config.rateLimits)) {
       this.rateLimiter.configure(scope, rl);
@@ -159,7 +157,6 @@ export class QueryEngine {
       schema,
       keyColNames,
       allColumns: uniqueColumns,
-
     });
   }
 
@@ -189,7 +186,7 @@ export class QueryEngine {
     const result = await this.db.all(
       `SELECT json_serialize_sql('${escaped}') as ast`,
     );
-    return JSON.parse(result[0].ast);
+    return JSON.parse(result[0].ast as string);
   }
 
   private extractQualsForTable(
@@ -258,13 +255,15 @@ export class QueryEngine {
 
     // AND/OR — recurse into children
     if (node.class === "CONJUNCTION") {
-      for (const child of node.children ?? []) this.walkWhere(child, keySet, quals);
+      for (const child of node.children ?? [])
+        this.walkWhere(child, keySet, quals);
       return;
     }
 
     // NOT — recurse into child
     if (node.type === "OPERATOR_NOT") {
-      for (const child of node.children ?? []) this.walkWhere(child, keySet, quals);
+      for (const child of node.children ?? [])
+        this.walkWhere(child, keySet, quals);
       return;
     }
 
@@ -289,7 +288,10 @@ export class QueryEngine {
         quals.push({
           column: colName,
           operator: "BETWEEN",
-          value: [extractAstValue(node.lower?.value), extractAstValue(node.upper?.value)],
+          value: [
+            extractAstValue(node.lower?.value),
+            extractAstValue(node.upper?.value),
+          ],
         });
       }
       return;
@@ -315,12 +317,16 @@ export class QueryEngine {
     }
 
     // IS NULL / IS NOT NULL
-    if (node.type === "OPERATOR_IS_NULL" || node.type === "OPERATOR_IS_NOT_NULL") {
+    if (
+      node.type === "OPERATOR_IS_NULL" ||
+      node.type === "OPERATOR_IS_NOT_NULL"
+    ) {
       const colName = node.children?.[0]?.column_names?.at(-1);
       if (colName && keySet.has(colName)) {
         quals.push({
           column: colName,
-          operator: node.type === "OPERATOR_IS_NULL" ? "IS NULL" : "IS NOT NULL",
+          operator:
+            node.type === "OPERATOR_IS_NULL" ? "IS NULL" : "IS NOT NULL",
           value: null,
         });
       }
@@ -328,7 +334,10 @@ export class QueryEngine {
     }
 
     // LIKE / ILIKE / NOT LIKE / NOT ILIKE
-    if (node.class === "FUNCTION" && node.function_name in QueryEngine.FUNCTION_MAP) {
+    if (
+      node.class === "FUNCTION" &&
+      node.function_name in QueryEngine.FUNCTION_MAP
+    ) {
       const colName = node.children?.[0]?.column_names?.at(-1);
       if (colName && keySet.has(colName)) {
         quals.push({
@@ -409,8 +418,12 @@ export class QueryEngine {
 
     const qn = this.qualifiedName(table.name);
     await this.db.run(`DELETE FROM ${qn}`);
-    await this.ingestViaArrow(reg, table, rows, quals, (buf) =>
-      `INSERT INTO ${qn} SELECT * FROM ${buf}`,
+    await this.ingestRows(
+      reg,
+      table,
+      rows,
+      quals,
+      (buf) => `INSERT INTO ${qn} SELECT * FROM ${buf}`,
     );
   }
 
@@ -431,7 +444,11 @@ export class QueryEngine {
     const outerTables = referencedTables.filter((t) => !subqueryTables.has(t));
 
     for (const reg of subqueryTables) {
-      const quals = this.extractQualsForTable(ast, reg.table.name, reg.keyColNames);
+      const quals = this.extractQualsForTable(
+        ast,
+        reg.table.name,
+        reg.keyColNames,
+      );
       await this.populateTable(reg, quals);
     }
 
@@ -547,7 +564,7 @@ export class QueryEngine {
     const result = await this.db.all(
       `SELECT json_deserialize_sql('${astStr}') as sql`,
     );
-    return result[0].sql;
+    return result[0].sql as string;
   }
 
   /**
@@ -643,7 +660,7 @@ export class QueryEngine {
     const result = await this.db.all(
       `SELECT json_deserialize_sql('${subAstStr}') as sql`,
     );
-    return result[0].sql;
+    return result[0].sql as string;
   }
 
   /** Sync tables from plugins into persistent storage. */
@@ -821,7 +838,7 @@ export class QueryEngine {
           pk,
         );
         if (meta.length > 0 && meta[0].last_cursor != null) {
-          cursorValue = JSON.parse(meta[0].last_cursor);
+          cursorValue = JSON.parse(meta[0].last_cursor as string);
         }
       } catch {
         // No metadata yet — first sync
@@ -854,7 +871,10 @@ export class QueryEngine {
       fetch: connection.fetch ?? globalThis.fetch,
     };
     if (table.cursor) {
-      ctx.cursor = cursorValue != null ? { column: table.cursor, value: cursorValue } : null;
+      ctx.cursor =
+        cursorValue != null
+          ? { column: table.cursor, value: cursorValue }
+          : null;
     }
 
     // Sync strategy (Airbyte model):
@@ -909,7 +929,7 @@ export class QueryEngine {
 
     const flushBatch = async () => {
       if (batch.length === 0) return;
-      await this.ingestViaArrow(reg, table, batch, quals, flushSql);
+      await this.ingestRows(reg, table, batch, quals, flushSql);
       rowsInserted += batch.length;
       batch = [];
     };
@@ -941,7 +961,12 @@ export class QueryEngine {
         if (batch.length >= BATCH_SIZE) {
           await flushBatch();
           if (onProgress) {
-            onProgress({ table: table.name, rowsInserted, cursor: newCursor, elapsedMs: Date.now() - start });
+            onProgress({
+              table: table.name,
+              rowsInserted,
+              cursor: newCursor,
+              elapsedMs: Date.now() - start,
+            });
           }
           // Cancellation checkpoint — between batches. We've just done
           // a potentially expensive INSERT; the next iteration will go
@@ -971,11 +996,17 @@ export class QueryEngine {
   }
 
   /**
-   * Register rows as an Arrow IPC buffer and execute a SQL statement against it.
-   * This is the single path for all Arrow-based ingestion — append, upsert, and
+   * Stage `rows` into a temp table via the binding's appender, then
+   * run the caller's SQL with that temp table as the source. This is
+   * the single path for all bulk ingestion — append, upsert, and
    * ephemeral materialization all route through here.
+   *
+   * The appender replaces the previous Arrow IPC `register_buffer`
+   * round-trip. Same external contract: caller passes a SQL builder
+   * `(bufName) => string`, gets the rows materialized in a buffer it
+   * can SELECT * from. The temp table lives only for this call.
    */
-  private async ingestViaArrow(
+  private async ingestRows(
     reg: RegisteredTable,
     table: TableDef,
     rows: Record<string, any>[],
@@ -987,28 +1018,44 @@ export class QueryEngine {
     const colTypes = new Map(table.columns.map((c) => [c.name, c.type]));
     const qualMap = Object.fromEntries(quals.map((q) => [q.column, q.value]));
 
-    const arrowCols: Record<string, arrow.Vector> = {};
-    for (const col of reg.allColumns) {
-      const values = rows.map((row) => {
-        const v = row[col] ?? qualMap[col];
-        if (v == null) return null;
-        return typeof v === "object" ? JSON.stringify(v) : v;
-      });
-      const colType = colTypes.get(col) ?? "string";
-      // DuckDB's Arrow scanner crashes on all-null Bool buffers (0-byte data buffer).
-      // Fall back to Utf8 — DuckDB casts NULL varchar to NULL boolean on INSERT.
-      const allNull = colType === "boolean" && values.every((v) => v == null);
-      arrowCols[col] = arrow.vectorFromArray(
-        values,
-        allNull ? new arrow.Utf8() : toArrowType(colType),
-      );
+    // Temp table mirrors the engine's column types so casts on insert
+    // are unambiguous. Names are quoted; DuckDB keeps temp tables in a
+    // session-scoped catalog so concurrent calls won't collide as long
+    // as the underlying connection is single-threaded (it is).
+    const buf = `_dripline_buf_${table.name}`;
+    const colDefs = reg.allColumns
+      .map((c) => {
+        const t = colTypes.get(c) ?? "string";
+        return `"${c}" ${toDuckType(t)}`;
+      })
+      .join(", ");
+    await this.db.exec(`DROP TABLE IF EXISTS "${buf}";`);
+    await this.db.exec(`CREATE TEMP TABLE "${buf}" (${colDefs});`);
+
+    const appender = await this.db.appender(buf);
+    try {
+      for (const row of rows) {
+        for (const col of reg.allColumns) {
+          const raw = row[col] ?? qualMap[col];
+          const colType = colTypes.get(col) ?? "string";
+          appendValue(appender, raw, colType);
+        }
+        appender.endRow();
+      }
+      appender.closeSync();
+    } catch (e) {
+      // Best-effort cleanup if a value blew up mid-row. The temp table
+      // gets dropped below regardless, so leaking the appender object
+      // would only matter if it pinned native handles — closeSync()
+      // here is harmless on a half-finished appender.
+      try {
+        appender.closeSync();
+      } catch {}
+      throw e;
     }
 
-    const ipc = arrow.tableToIPC(new arrow.Table(arrowCols), "stream");
-    const buf = `_dripline_buf_${table.name}`;
-    await this.db.register_buffer(buf, [ipc], true);
     await this.db.run(sql(buf));
-    await this.db.unregister_buffer(buf);
+    await this.db.exec(`DROP TABLE IF EXISTS "${buf}";`);
   }
 
   getDatabase(): Database {
@@ -1036,17 +1083,41 @@ function extractAstValue(v: any): any {
   return v.is_null ? null : v.value;
 }
 
-function toArrowType(type: ColumnType): arrow.DataType {
+/**
+ * Push one cell into an open appender. Dispatches on the engine-level
+ * column type so the binding's strict per-type appender method sees
+ * a value of the expected JS shape:
+ *
+ *   number  → DOUBLE   (appendDouble)
+ *   boolean → BOOLEAN  (appendBoolean)
+ *   anything else      → VARCHAR (json + datetime + string + fallback)
+ *
+ * `json` columns are written as VARCHAR — the underlying column is
+ * JSON-typed in `toDuckType`, so DuckDB parses on insert. Non-primitive
+ * values are JSON-stringified so they land as sane text rather than
+ * `[object Object]`.
+ */
+function appendValue(
+  appender: Appender,
+  value: unknown,
+  type: ColumnType,
+): void {
+  if (value == null) {
+    appender.appendNull();
+    return;
+  }
   switch (type) {
     case "number":
-      return new arrow.Float64();
+      appender.appendDouble(typeof value === "number" ? value : Number(value));
+      return;
     case "boolean":
-      return new arrow.Bool();
-    case "json":
-    case "datetime":
-    case "string":
+      appender.appendBoolean(Boolean(value));
+      return;
     default:
-      return new arrow.Utf8();
+      appender.appendVarchar(
+        typeof value === "string" ? value : JSON.stringify(value),
+      );
+      return;
   }
 }
 

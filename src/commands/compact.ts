@@ -19,7 +19,7 @@
  * skipped (a fast HEAD-like LIST avoids the expensive COPY).
  */
 
-import { Database } from "duckdb-async";
+import { Database } from "../core/db.js";
 import { loadConfig } from "../config/loader.js";
 import { type Lease, LeaseStore } from "../core/lease.js";
 import { Remote, resolveRemote } from "../core/remote.js";

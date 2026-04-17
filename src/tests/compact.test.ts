@@ -229,7 +229,7 @@ const freshPrefix = (label: string) => `${RUN_PREFIX}/${label}-${++counter}`;
 
 /** Count rows in curated/ via a direct DuckDB read. */
 async function countCurated(prefix: string, table: string): Promise<number> {
-  const { Database } = await import("duckdb-async");
+  const { Database } = await import("../core/db.js");
   const db = await Database.create(":memory:");
   try {
     const remote = new Remote({
@@ -257,7 +257,7 @@ async function readCuratedById(
   table: string,
   id: number,
 ): Promise<{ id: number; name: string; updated_at: string } | null> {
-  const { Database } = await import("duckdb-async");
+  const { Database } = await import("../core/db.js");
   const db = await Database.create(":memory:");
   try {
     const remote = new Remote({
@@ -876,7 +876,7 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
       );
 
       // Verify both partitions have the row by counting across all curated.
-      const { Database: DB } = await import("duckdb-async");
+      const { Database: DB } = await import("../core/db.js");
       const verifyDb = await DB.create(":memory:");
       try {
         await remote.attach(verifyDb);
@@ -1068,7 +1068,7 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
     rows: Record<string, unknown>[],
     runId: string,
   ): Promise<void> {
-    const { Database: DB } = await import("duckdb-async");
+    const { Database: DB } = await import("../core/db.js");
     const db = await DB.create(":memory:");
     try {
       await remote.attach(db);

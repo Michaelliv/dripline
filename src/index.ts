@@ -1,3 +1,5 @@
+export type { OutputFormat, QueryOptions } from "./commands/query.js";
+export { QueryConfigError, runQuery } from "./commands/query.js";
 export {
   addConnection,
   findConfigDir,
@@ -6,17 +8,39 @@ export {
   removeConnection,
   saveConfig,
 } from "./config/loader.js";
-export type { CacheConfig, DriplineConfig } from "./config/types.js";
+export type {
+  CacheConfig,
+  DriplineConfig,
+  LaneConfig,
+  LaneTable,
+  RemoteConfig,
+} from "./config/types.js";
 export { DEFAULT_CONFIG } from "./config/types.js";
 export { configureCache, QueryCache, queryCache } from "./core/cache.js";
-export { createEngine, QueryEngine } from "./core/engine.js";
+export type { Appender, Row } from "./core/db.js";
+export { Database } from "./core/db.js";
 export type {
   SyncOptions,
   SyncProgressCallback,
   SyncResult,
   SyncTableResult,
 } from "./core/engine.js";
+export { createEngine, QueryEngine } from "./core/engine.js";
+export type { ValidatedLane } from "./core/lanes.js";
+export {
+  DEFAULT_MAX_RUNTIME_MS,
+  laneLeaseName,
+  laneSchema,
+  laneStatePath,
+  parseInterval,
+  validateLane,
+  validateLanes,
+} from "./core/lanes.js";
+export type { Lease, LeaseConfig } from "./core/lease.js";
+export { LeaseStore } from "./core/lease.js";
 export { RateLimiter, rateLimiter } from "./core/rate-limiter.js";
+export type { ResolvedRemote } from "./core/remote.js";
+export { Remote, resolveRemote } from "./core/remote.js";
 export type {
   DriplinePluginAPI,
   PluginFunction,
@@ -56,33 +80,12 @@ export type {
   RateLimitConfig,
   TableDef,
 } from "./plugin/types.js";
-export { Remote, resolveRemote } from "./core/remote.js";
-export type { ResolvedRemote } from "./core/remote.js";
-export type {
-  LaneConfig,
-  LaneTable,
-  RemoteConfig,
-} from "./config/types.js";
-export {
-  DEFAULT_MAX_RUNTIME_MS,
-  laneLeaseName,
-  laneSchema,
-  laneStatePath,
-  parseInterval,
-  validateLane,
-  validateLanes,
-} from "./core/lanes.js";
-export type { ValidatedLane } from "./core/lanes.js";
-export { LeaseStore } from "./core/lease.js";
-export type { Lease, LeaseConfig } from "./core/lease.js";
-export { Dripline } from "./sdk.js";
 export type { DriplineOptions } from "./sdk.js";
-export { QueryConfigError, runQuery } from "./commands/query.js";
-export type { OutputFormat, QueryOptions } from "./commands/query.js";
+export { Dripline } from "./sdk.js";
+export { asyncGet, asyncGetPaginated } from "./utils/async-http.js";
 export type { ExecOptions, ExecResult, OutputParser } from "./utils/cli.js";
 export { commandExists, syncExec } from "./utils/cli.js";
 export { formatCsv, formatJson, formatLine } from "./utils/formatters.js";
 export type { HttpResponse } from "./utils/http.js";
 export { syncGet, syncGetPaginated } from "./utils/http.js";
-export { asyncGet, asyncGetPaginated } from "./utils/async-http.js";
 export { formatTable } from "./utils/table-formatter.js";

@@ -22,7 +22,7 @@
  */
 
 import { AwsClient } from "aws4fetch";
-import type { Database } from "duckdb-async";
+import type { Database } from "./db.js";
 import type { RemoteConfig } from "../config/types.js";
 import { laneSchema, laneStatePath } from "./lanes.js";
 import { RemoteFS } from "./remote-fs.js";

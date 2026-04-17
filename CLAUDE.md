@@ -167,8 +167,7 @@ The SDK supports persistent sync into an external DuckDB database. Two modes, no
 - **External DB mode** (`database` + `schema`): `sync()` persists data. `query()` reads what's there.
 
 ```typescript
-import { Database } from "duckdb-async";
-import { Dripline } from "dripline";
+import { Database, Dripline } from "dripline";
 
 const db = await Database.create("./analytics.duckdb");
 const dl = await Dripline.create({

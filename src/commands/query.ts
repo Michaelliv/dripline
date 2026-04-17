@@ -1,4 +1,4 @@
-import { Database } from "duckdb-async";
+import { Database } from "../core/db.js";
 import { loadConfig } from "../config/loader.js";
 import { Remote } from "../core/remote.js";
 import { loadAllPlugins } from "../plugin/loader.js";

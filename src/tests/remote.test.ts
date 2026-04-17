@@ -10,7 +10,7 @@
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 import { AwsClient } from "aws4fetch";
-import { Database } from "duckdb-async";
+import { Database } from "../core/db.js";
 import type { RemoteConfig } from "../config/types.js";
 import { Remote } from "../core/remote.js";
 import type { PluginDef } from "../plugin/types.js";
