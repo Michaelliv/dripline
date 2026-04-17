@@ -1,253 +1,62 @@
-# dripline
+# dripline monorepo
 
-Query mode for agents.
+Bun workspace. Three package families:
 
-## Commands
+- `packages/dripline/` — engine, CLI, SDK. Published to npm as `dripline`.
+- `packages/dripyard/` — dashboard + worker supervisor. Published to npm as `dripyard`.
+- `packages/plugins/<name>/` — individual plugins. **Not published to npm**; installed directly from this repo via `dripline plugin install git:github.com/Michaelliv/dripline#packages/plugins/<name>`.
+
+Internal deps use `workspace:*`. Lockstep versioning — one `v*` tag publishes both `dripline` and `dripyard` together.
+
+## Commands (root)
 
 ```bash
-npm run dev -- query "SELECT 1"
-npm run dev -- repl
-npm run dev -- --help
-npm test
-npm run format
-npm run lint
-npm run build
+bun install                         # install everything, link workspaces
+bun run --filter dripline build     # build one package
+bun run --filter dripline test      # test one package
+bun run --filter '*' build          # build everything
+bun run check                       # biome check across the repo
+bun run format                      # biome format --write
 ```
 
-## Architecture
+Per-package commands (`dev`, `test`, `build`, `typecheck`) live in each `packages/*/package.json` and can be run with `bun --filter <name> <script>` or by `cd`-ing into the dir.
 
-```
-SQL query > CLI/SDK > QueryEngine > DuckDB > Plugin (sync/async generator) > API/CLI
-```
+## Per-package docs
 
-### Layers
+- [`packages/dripline/CLAUDE.md`](packages/dripline/CLAUDE.md) — engine internals, plugin authoring, sync strategies
+- [`packages/dripyard/AGENTS.md`](packages/dripyard/AGENTS.md) — dashboard + worker architecture
 
-| Layer | File | Purpose |
-|-------|------|---------|
-| SDK | `src/sdk.ts`, `src/index.ts` | `Dripline` class, library entrypoint |
-| CLI | `src/main.ts` | Commander setup, routes to commands |
-| Commands | `src/commands/` | query, repl, tables, init, connection, plugin |
-| Engine | `src/core/engine.ts` | DuckDB, table materialization, query execution |
-| Cache | `src/core/cache.ts` | In-memory query result cache with TTL |
-| Rate Limiter | `src/core/rate-limiter.ts` | Token bucket per-scope |
-| Store | `src/core/store.ts` | File-based record storage |
-| Plugin API | `src/plugin/api.ts` | `DriplinePluginAPI` interface, `createPluginAPI()` |
-| Plugin Registry | `src/plugin/registry.ts` | Plugin/table storage and lookup |
-| Plugin Loader | `src/plugin/loader.ts` | Discovery, loading from paths/dirs |
-| Plugin Installer | `src/plugin/installer.ts` | npm/git/local install, `plugins.json` |
-| Config | `src/config/` | `.dripline/config.json`, env var resolution |
-| HTTP (sync) | `src/utils/http.ts` | `syncGet`, `syncGetPaginated` (curl-based) |
-| HTTP (async) | `src/utils/async-http.ts` | `asyncGet`, `asyncGetPaginated` (native fetch) |
-| CLI exec | `src/utils/cli.ts` | `syncExec`, `commandExists` (for wrapping local CLIs) |
-| Formatters | `src/utils/` | Table, JSON, CSV, line output, spinner |
+## Toolchain
 
-### Plugins (separate packages)
-
-| Package | Dir | Tables |
-|---------|-----|--------|
-| `dripline-plugin-github` | `plugins/github/` | github_repos, github_issues, github_pull_requests, github_stargazers |
-| `dripline-plugin-docker` | `plugins/docker/` | docker_containers, docker_images, docker_volumes, docker_networks |
-| `dripline-plugin-brew` | `plugins/brew/` | brew_formulae, brew_casks, brew_outdated, brew_services |
-| `dripline-plugin-ps` | `plugins/ps/` | ps_processes, ps_ports |
-| `dripline-plugin-git` | `plugins/git/` | git_commits, git_branches, git_tags, git_remotes, git_status |
-| `dripline-plugin-system-profiler` | `plugins/system-profiler/` | sys_software, sys_hardware, sys_network_interfaces, sys_storage, sys_displays |
-| `dripline-plugin-pi` | `plugins/pi/` | pi_sessions, pi_messages, pi_tool_calls, pi_costs, pi_prompt, pi_generate |
-| `dripline-plugin-kubectl` | `plugins/kubectl/` | k8s_pods, k8s_services, k8s_deployments, k8s_nodes, k8s_namespaces, k8s_configmaps, k8s_secrets, k8s_ingresses |
-| `dripline-plugin-npm` | `plugins/npm/` | npm_packages, npm_outdated, npm_global, npm_scripts |
-| `dripline-plugin-spotlight` | `plugins/spotlight/` | spotlight_search, spotlight_apps, spotlight_recent |
-| `dripline-plugin-skills-sh` | `plugins/skills-sh/` | skills_search |
-| `dripline-plugin-cloudflare` | `plugins/cloudflare/` | cf_workers, cf_zones, cf_dns_records, cf_pages_projects, cf_pages_deployments, cf_d1_databases, cf_kv_namespaces, cf_r2_buckets, cf_queues, cf_dns_lookup, cf_domain_check |
-| `dripline-plugin-vercel` | `plugins/vercel/` | vercel_projects, vercel_deployments, vercel_domains, vercel_env_vars |
-
-Plugins live in `plugins/` as npm workspaces. Core ships with zero plugins.
-
-## Writing a Plugin
-
-Three patterns: **sync API** uses `syncGet`/`syncGetPaginated`, **async API** uses `asyncGet`/`asyncGetPaginated`, **CLI** uses `syncExec`.
-
-Plugins can use sync or async generators — the engine handles both transparently.
-
-```typescript
-// Sync API plugin
-import type { DriplinePluginAPI } from "dripline";
-import { syncGetPaginated } from "dripline";
-
-export default function(dl: DriplinePluginAPI) {
-  dl.setName("myplugin");
-  dl.setVersion("1.0.0");
-  dl.setConnectionSchema({
-    api_key: { type: "string", required: true, env: "MY_API_KEY" },
-  });
-
-  dl.registerTable("my_table", {
-    columns: [
-      { name: "id", type: "number" },
-      { name: "name", type: "string" },
-    ],
-    keyColumns: [
-      { name: "org", required: "required" },
-    ],
-    *list(ctx) {
-      const org = ctx.quals.find(q => q.column === "org")?.value;
-      if (!org) return;
-      const headers = { Authorization: `Bearer ${ctx.connection.config.api_key}` };
-      const data = syncGetPaginated(`https://api.example.com/orgs/${org}/items`, headers);
-      for (const item of data) {
-        yield { id: item.id, name: item.name };
-      }
-    },
-  });
-}
-```
-
-```typescript
-// Async API plugin (native fetch, non-blocking)
-import type { DriplinePluginAPI } from "dripline";
-import { asyncGetPaginated } from "dripline";
-
-export default function(dl: DriplinePluginAPI) {
-  dl.setName("myplugin_async");
-  dl.setVersion("1.0.0");
-  dl.setConnectionSchema({
-    api_key: { type: "string", required: true, env: "MY_API_KEY" },
-  });
-
-  dl.registerTable("my_table", {
-    columns: [
-      { name: "id", type: "number" },
-      { name: "name", type: "string" },
-    ],
-    keyColumns: [
-      { name: "org", required: "required" },
-    ],
-    async *list(ctx) {
-      const org = ctx.quals.find(q => q.column === "org")?.value;
-      if (!org) return;
-      const headers = { Authorization: `Bearer ${ctx.connection.config.api_key}` };
-      const data = await asyncGetPaginated(`https://api.example.com/orgs/${org}/items`, headers);
-      for (const item of data) {
-        yield { id: item.id, name: item.name };
-      }
-    },
-  });
-}
-```
-
-```typescript
-// CLI plugin
-import type { DriplinePluginAPI } from "dripline";
-import { syncExec } from "dripline";
-
-export default function(dl: DriplinePluginAPI) {
-  dl.setName("mycli");
-  dl.setVersion("1.0.0");
-
-  dl.registerTable("my_things", {
-    columns: [
-      { name: "name", type: "string" },
-      { name: "status", type: "string" },
-    ],
-    *list() {
-      const { rows } = syncExec("mytool", ["list", "--json"], { parser: "json" });
-      for (const r of rows) yield { name: r.name, status: r.status };
-    },
-  });
-}
-```
-
-`syncExec` parsers: `json`, `jsonlines`, `csv`, `tsv`, `lines`, `kv`, `raw`.
-
-Plugins use sync or async generators. Data is materialized into DuckDB temp tables before query execution. Key column values are extracted from WHERE clauses and passed to plugins as quals. Non-key WHERE clauses are filtered by DuckDB after materialization.
-
-## Incremental Sync
-
-The SDK supports persistent sync into an external DuckDB database. Two modes, no overlap:
-
-- **Ephemeral mode** (no `database` option): `query()` materializes fresh every time. `sync()` throws.
-- **External DB mode** (`database` + `schema`): `sync()` persists data. `query()` reads what's there.
-
-```typescript
-import { Database, Dripline } from "dripline";
-
-const db = await Database.create("./analytics.duckdb");
-const dl = await Dripline.create({
-  plugins: [myPlugin],
-  database: db,
-  schema: "workspace_1",
-});
-
-await dl.sync({ my_table: { org: "acme" } });
-const rows = await dl.query('SELECT * FROM "workspace_1"."my_table"');
-
-await dl.close(); // does NOT close the shared database
-await db.close();
-```
-
-Sync strategy is determined automatically from the table definition:
-
-| `cursor` | `primaryKey` | Strategy |
-|----------|-------------|----------|
-| no | no | Full replace |
-| no | yes | Full replace + dedup |
-| yes | no | Incremental append |
-| yes | yes | Incremental append + dedup |
-
-```typescript
-dl.registerTable("events", {
-  columns: [
-    { name: "id", type: "number" },
-    { name: "data", type: "json" },
-    { name: "updated_at", type: "datetime" },
-  ],
-  primaryKey: ["id"],          // row identity for dedup
-  cursor: "updated_at",        // high-water mark for incremental sync
-  async *list(ctx) {
-    // ctx.cursor?.value is the last synced updated_at (null on first sync)
-    const since = ctx.cursor?.value ?? "1970-01-01T00:00:00Z";
-    const data = await asyncGetPaginated(`https://api.example.com/events?since=${since}`);
-    for (const e of data) yield e;
-  },
-});
-```
-
-The engine filters rows engine-side as a safety net — even if the plugin yields old rows, no duplicates. Cursors are scoped per params, so syncing the same table with different params (e.g. `org=a` vs `org=b`) maintains independent high-water marks. Ingestion is batched (10k rows) for constant memory usage regardless of dataset size.
-
-## Config
-
-`.dripline/config.json`:
-```json
-{
-  "connections": [
-    { "name": "gh", "plugin": "github", "config": { "token": "ghp_xxx" } }
-  ],
-  "cache": { "enabled": true, "ttl": 300, "maxSize": 1000 },
-  "rateLimits": { "github": { "maxPerSecond": 5 } }
-}
-```
-
-Env vars override config. Plugins declare env var names in `connectionConfigSchema` via the `env` field (e.g. `GITHUB_TOKEN`).
+- **bun** for install + scripts + test runner + TS execution
+- **TypeScript** — each package has its own `tsconfig.json`
+- **biome** — one config at root for format + lint
+- **No** lerna, nx, turbo, or tsx in the monorepo
 
 ## Adding a New Plugin
 
-1. Create `plugins/<name>/` with `package.json`, `tsconfig.json`, `src/index.ts`
-2. Set `"name": "dripline-plugin-<name>"` in package.json with `dripline` as peer dep
+1. `mkdir packages/plugins/<name>` — copy a sibling plugin as a template
+2. Set `"name": "dripline-plugin-<name>"` in package.json, `dripline` as peer dep
 3. Export a default function that receives `DriplinePluginAPI`
-4. Call `dl.setName()`, `dl.registerTable()`, etc.
-5. Install locally: `dripline plugin install ./plugins/<name>/src/index.ts`
+4. `bun install` from the repo root — workspace linking is automatic
+5. Test locally: `bun --filter dripline-plugin-<name> test`
 
-## pi Extension
+## Editing Across Packages
 
-A pi coding agent extension lives at `.pi/extensions/pi-dripline-context/`. On session start, it runs `dripline tables --json`, formats a compact summary of all available tables, and injects it into the agent's context. Shows `💧 N tables` in the TUI status bar.
+Because every internal dep is `workspace:*`, edits in `packages/dripline` are immediately visible to `packages/dripyard` and every plugin. Exception: `packages/dripline/package.json` points `main` at `dist/`, so dripyard's typecheck needs `bun --filter dripline build` after breaking API changes.
 
-## Adding a New Command
+## Releasing
 
-1. Create `src/commands/<name>.ts`
-2. Export an async function
-3. Import and register in `src/main.ts`
+Lockstep, tag-driven. Bump `version` in both `packages/dripline/package.json` and `packages/dripyard/package.json`, commit, tag, push:
 
-## Exit Codes
+```bash
+git tag v0.8.0 && git push --tags
+```
 
-- `0`. success
-- `1`. error
-- `2`. user error
-- `3`. not found
+CI (`.github/workflows/release.yml`) then:
+
+1. Runs the test matrix for both packages.
+2. Publishes each to npm. Tags containing `rc` / `alpha` / `beta` publish under `--tag next` instead of `latest`.
+3. Creates a GitHub release with autogenerated notes.
+
+Plugins are never published. They live in the repo and users install them by git URL — pinning to a tag like `git:github.com/Michaelliv/dripline#v0.8.0:packages/plugins/github` if they want reproducibility.

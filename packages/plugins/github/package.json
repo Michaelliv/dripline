@@ -1,0 +1,30 @@
+{
+  "name": "dripline-plugin-github",
+  "version": "0.1.0",
+  "description": "GitHub plugin for dripline — query repos, issues, PRs, and stargazers",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test src",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "github"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "dripline-plugin-mongodb",
+  "version": "0.1.0",
+  "description": "mongodb plugin for dripline",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "mongodb"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

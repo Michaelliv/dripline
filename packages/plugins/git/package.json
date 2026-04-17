@@ -1,0 +1,29 @@
+{
+  "name": "dripline-plugin-git",
+  "version": "0.1.0",
+  "description": "Git plugin for dripline — query commits, branches, tags, and remotes",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "git"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

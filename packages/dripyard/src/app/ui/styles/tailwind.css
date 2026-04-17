@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Surfaces */
+  --color-shift-bg: var(--bg);
+  --color-shift-panel: var(--panel);
+  --color-shift-panelRaised: var(--panel-raised);
+
+  /* Text */
+  --color-shift-text: var(--text);
+  --color-shift-muted: var(--muted);
+  --color-shift-dim: var(--dim);
+
+  /* Borders (three tiers) */
+  --color-shift-borderSubtle: var(--border-subtle);
+  --color-shift-borderMuted: var(--border-muted);
+  --color-shift-borderStrong: var(--border-strong);
+
+  /* Status */
+  --color-shift-accent: var(--accent);
+  --color-shift-ok: var(--ok);
+  --color-shift-error: var(--error);
+  --color-shift-warning: var(--warning);
+
+  /* Terminal-chrome backdrops */
+  --color-shift-toolTitle: var(--tool-title);
+  --color-shift-toolOutput: var(--tool-output);
+  --color-shift-tcPending: var(--tc-pending);
+  --color-shift-tcSuccess: var(--tc-success);
+  --color-shift-tcError: var(--tc-error);
+}
+
+:root {
+  --background: var(--bg, hsl(0 0% 100%));
+  --foreground: var(--text, hsl(240 10% 3.9%));
+  --muted-foreground: var(--muted, hsl(240 3.8% 46.1%));
+  --popover: var(--panel, hsl(0 0% 100%));
+  --popover-foreground: var(--text, hsl(240 10% 3.9%));
+  --sidebar: var(--bg, hsl(0 0% 98%));
+  --sidebar-foreground: var(--text, hsl(240 5.3% 26.1%));
+  --sidebar-primary: var(--accent, hsl(240 5.9% 10%));
+  --sidebar-primary-foreground: var(--text, hsl(0 0% 98%));
+  --sidebar-accent: var(--panel, hsl(240 4.8% 95.9%));
+  --sidebar-accent-foreground: var(--text, hsl(240 5.9% 10%));
+  --sidebar-border: var(--border-muted, hsl(220 13% 91%));
+  --sidebar-ring: var(--accent, hsl(217.2 91.2% 59.8%));
+}
+
+@theme inline {
+  --color-border: var(--sidebar-border);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-destructive: var(--color-shift-error, hsl(0 84% 60%));
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}

@@ -1,0 +1,31 @@
+{
+  "name": "dripline-plugin-spotlight",
+  "version": "0.1.0",
+  "description": "macOS Spotlight plugin for dripline — search files by name, kind, content, and metadata",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "spotlight",
+    "mdfind",
+    "macos"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

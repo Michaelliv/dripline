@@ -1,0 +1,29 @@
+{
+  "name": "dripline-plugin-fastly",
+  "version": "0.1.0",
+  "description": "fastly plugin for dripline",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "fastly"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

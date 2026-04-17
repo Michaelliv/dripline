@@ -1,0 +1,71 @@
+{
+  "name": "dripline",
+  "version": "0.7.0-rc.10",
+  "description": "Query anything, one drip at a time",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./utils/http": {
+      "types": "./dist/utils/http.d.ts",
+      "import": "./dist/utils/http.js",
+      "default": "./dist/utils/http.js"
+    },
+    "./utils/cli": {
+      "types": "./dist/utils/cli.d.ts",
+      "import": "./dist/utils/cli.js",
+      "default": "./dist/utils/cli.js"
+    }
+  },
+  "bin": {
+    "dripline": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build",
+    "dev": "bun run src/main.ts",
+    "test": "bun test src/tests",
+    "smoke": "bun run smoke.ts",
+    "format": "bunx @biomejs/biome format --write src/",
+    "lint": "bunx @biomejs/biome lint src/",
+    "check": "bunx @biomejs/biome check src/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Michaelliv/dripline.git"
+  },
+  "homepage": "https://github.com/Michaelliv/dripline#readme",
+  "bugs": {
+    "url": "https://github.com/Michaelliv/dripline/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "sql",
+    "cloud",
+    "api",
+    "query",
+    "steampipe",
+    "cli"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@types/bun": "^1.2.17",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.2-r.1",
+    "aws4fetch": "^1.0.20",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "nanoid": "^5.1.6"
+  }
+}

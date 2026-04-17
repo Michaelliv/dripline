@@ -1,0 +1,477 @@
+:root {
+  /*
+   * Dripline water theme. A single vertical gradient from abyssal
+   * (background) to foam (text), with aquamarine and harbor-amber
+   * tones for accent and warning, coral for error, seafoam for ok.
+   *
+   * Design goals: legibility on a dark substrate, low eyestrain for
+   * long sessions, visible surface tiering (bg → panel → panel-raised),
+   * and coherent status semantics that read at the same perceived
+   * weight. No harsh pure-yellow or electric-blue accents.
+   */
+
+  /* Surfaces: abyssal → surface */
+  --bg: #0a1821;           /* deep ocean — the page */
+  --panel: #0f2432;        /* shelf — sidebar, secondary panels */
+  --panel-raised: #14303f; /* tiles, cards, hover rows */
+
+  /* Text hierarchy */
+  --text: #d8e7ec;         /* foam — primary */
+  --muted: #7a95a3;        /* mist — secondary */
+  --dim: #4a6775;          /* shadow — tertiary / placeholders */
+
+  /* Borders: three strengths for a consistent visual vocabulary.
+   * Callers use `border-[var(--border-muted)]` by default; subtle
+   * for row dividers, strong for emphasis/hover. */
+  --border-subtle: #1a3041;
+  --border-muted: #2a475c;
+  --border-strong: #40657e;
+
+  /* Status tones — balanced for equal perceived weight on --bg. */
+  --accent: #5ec4b6;       /* aquamarine — primary accent, plugin names, active */
+  --ok: #6dc9a1;           /* seafoam — success */
+  --warning: #e8b053;      /* harbor amber — running / attention (not pure yellow) */
+  --error: #e07a7a;        /* coral — error */
+
+  /* Terminal-chrome message card backgrounds — deep-water tints */
+  --tc-pending: #10222f;
+  --tc-success: #102820;
+  --tc-error: #2a1a1e;
+
+  --tool-title: var(--text);
+  --tool-output: var(--muted);
+  --user-msg-bg: #16303e;
+  --user-msg-text: var(--text);
+
+  /* Markdown — aligned with water palette */
+  --md-heading: #e8b053;
+  --md-link: #6fb5d6;
+  --md-link-url: var(--dim);
+  --md-code: var(--accent);
+  --md-code-block: var(--ok);
+  --md-code-block-border: var(--muted);
+  --md-quote: var(--muted);
+  --md-quote-border: var(--border-muted);
+  --md-hr: var(--border-muted);
+  --md-list-bullet: var(--accent);
+
+  /* Diff colors track ok/error so code + prose agree */
+  --diff-add: var(--ok);
+  --diff-del: var(--error);
+  --diff-ctx: var(--muted);
+
+  /* Syntax highlighting — cool-leaning water palette */
+  --syntax-comment: #5a8f6f;
+  --syntax-keyword: #6fb5d6;
+  --syntax-function: #e8b053;
+  --syntax-variable: #9ecee0;
+  --syntax-string: #d68a68;
+  --syntax-number: #a8d5b8;
+  --syntax-type: var(--accent);
+  --syntax-operator: var(--text);
+  --syntax-punctuation: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg), var(--panel) 40%) 0%,
+    var(--bg) 50%,
+    color-mix(in srgb, var(--bg), var(--panel) 20%) 100%
+  );
+  background-attachment: fixed;
+  color: var(--text);
+  font-family:
+    "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Soft fade at top/bottom edges of the message scroll area */
+[role="log"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 8px,
+    black calc(100% - 8px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 8px,
+    black calc(100% - 8px),
+    transparent 100%
+  );
+}
+
+.md {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.md-heading {
+  margin: 0 0 0.3em;
+  color: var(--md-heading);
+  font-weight: 700;
+}
+.md-h1 {
+  text-decoration: underline;
+}
+.md-h2 {
+  /* reserved for future heading styles */
+}
+
+.md-p {
+  margin: 0 0 0.4em;
+}
+.md-p:last-child {
+  margin-bottom: 0;
+}
+
+.md-code {
+  color: var(--md-code);
+}
+
+.md-codeblock {
+  margin: 0.4em 0;
+  font-family:
+    "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.md-codefence {
+  color: var(--md-code-block-border);
+  font-size: 12px;
+}
+
+.md-codepre {
+  margin: 0;
+  padding: 0 0 0 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--md-code-block);
+  overflow: visible;
+}
+
+.md-quote {
+  margin: 0.4em 0;
+  padding: 0 0 0 8px;
+  border-left: 2px solid var(--md-quote-border);
+  color: var(--md-quote);
+  font-style: italic;
+}
+
+.md-hr {
+  border: none;
+  border-top: 1px solid var(--md-hr);
+  margin: 0.5em 0;
+}
+
+.md-list {
+  margin: 0 0 0.4em;
+  padding-left: 1.2em;
+  list-style: none;
+}
+
+.md-li {
+  margin: 0;
+  line-height: 1.55;
+}
+
+ul.md-list > .md-li::before {
+  content: "- ";
+  color: var(--md-list-bullet);
+  margin-left: -1.2em;
+  display: inline-block;
+  width: 1.2em;
+}
+
+ol.md-list {
+  counter-reset: md-ol;
+}
+
+ol.md-list > .md-li::before {
+  counter-increment: md-ol;
+  content: counter(md-ol) ". ";
+  color: var(--md-list-bullet);
+  margin-left: -1.2em;
+  display: inline-block;
+  width: 1.2em;
+}
+
+.md-li > .md-p {
+  margin: 0;
+}
+.md-li > .md-p:first-child {
+  display: inline;
+}
+
+.md-link {
+  color: var(--md-link);
+  text-decoration: underline;
+}
+
+.md-link-url {
+  color: var(--md-link-url);
+}
+
+.md-table {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+  font-size: 13px;
+}
+
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border-muted);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.md-table th {
+  font-weight: 700;
+}
+
+.tool-output-pre {
+  margin: 8px 0 0;
+  padding: 0 0 0 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 13px;
+  line-height: 1.45;
+  background: transparent;
+  border: none;
+  overflow: visible;
+}
+
+.diff-view {
+  margin: 8px 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family:
+    "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.diff-add {
+  color: var(--diff-add);
+}
+.diff-del {
+  color: var(--diff-del);
+}
+.diff-ctx {
+  color: var(--diff-ctx);
+}
+.diff-ellipsis {
+  color: var(--dim);
+}
+
+/* highlight.js classes — mapped to pi's syntax theme tokens */
+.hljs-keyword,
+.hljs-selector-tag {
+  color: var(--syntax-keyword);
+}
+.hljs-built_in {
+  color: var(--syntax-type);
+}
+.hljs-literal,
+.hljs-number {
+  color: var(--syntax-number);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--syntax-string);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--syntax-comment);
+}
+.hljs-function,
+.hljs-title {
+  color: var(--syntax-function);
+}
+.hljs-class,
+.hljs-type,
+.hljs-name {
+  color: var(--syntax-type);
+}
+.hljs-attr,
+.hljs-variable,
+.hljs-params,
+.hljs-template-variable {
+  color: var(--syntax-variable);
+}
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--syntax-variable);
+}
+.hljs-operator {
+  color: var(--syntax-operator);
+}
+.hljs-punctuation {
+  color: var(--syntax-punctuation);
+}
+.hljs-deletion {
+  color: var(--diff-del);
+}
+.hljs-section {
+  color: var(--syntax-function);
+}
+.hljs-subst {
+  color: var(--text);
+}
+
+/* BlockNote overrides — inherit from our theme */
+.bn-knowledge-editor .bn-container {
+  --bn-colors-editor-text: var(--text);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--text);
+  --bn-colors-menu-background: var(--panel);
+  --bn-colors-tooltip-text: var(--text);
+  --bn-colors-tooltip-background: var(--panel);
+  --bn-colors-hovered-text: var(--text);
+  --bn-colors-hovered-background: var(--panel);
+  --bn-colors-selected-text: var(--text);
+  --bn-colors-selected-background: var(--accent);
+  --bn-colors-disabled-text: var(--muted);
+  --bn-colors-disabled-background: var(--panel);
+  --bn-colors-shadow: var(--border-muted);
+  --bn-colors-border: var(--border-muted);
+  --bn-colors-side-menu: var(--muted);
+  --bn-font-family:
+    "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+}
+
+.bn-knowledge-editor .bn-editor {
+  background-color: transparent;
+  color: var(--text);
+  font-size: 13px;
+  padding-inline: 24px;
+}
+
+/* Menus, tooltips, dropdowns */
+.bn-knowledge-editor .bn-container [class*="bn-menu"],
+.bn-knowledge-editor .bn-container [data-radix-popper-content-wrapper] > *,
+.bn-knowledge-editor .bn-container [role="menu"],
+.bn-knowledge-editor .bn-container [role="listbox"] {
+  background-color: var(--panel);
+  border: 1px solid var(--border-muted);
+}
+
+.bn-knowledge-editor .bn-default-styles {
+  font-size: 13px;
+  font-family:
+    "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+}
+
+/* Code blocks use our syntax theme */
+.bn-knowledge-editor .bn-block-content[data-content-type="codeBlock"] {
+  background-color: var(--panel);
+}
+
+/* Inline code */
+.bn-knowledge-editor .bn-inline-content code {
+  color: var(--md-code);
+  font-family: inherit;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+/* Prompt card */
+.prompt-card:focus-within {
+  border-color: var(--accent);
+}
+
+/* Status chips */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-muted);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition-property: background, border-color, color;
+  transition-duration: 0.12s;
+  transition-timing-function: ease-out;
+  user-select: none;
+  white-space: nowrap;
+}
+.status-chip:hover {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.status-chip:active {
+  transform: scale(0.96);
+}
+.status-chip-static {
+  cursor: default;
+}
+.status-chip-static:hover {
+  background: transparent;
+  border-color: var(--border-muted);
+  color: var(--muted);
+}
+.status-chip-static:active {
+  transform: none;
+}
+.status-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+/* Shimmer blocks — standing rectangles that pulse */
+@keyframes shimmer-pulse {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+.shimmer-block {
+  animation: shimmer-pulse 1.6s ease-in-out infinite;
+}

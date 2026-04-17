@@ -18,27 +18,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-      - run: npm install --legacy-peer-deps
-      - run: npm install -g tsx
-      - run: npm run build
-      - name: Create self-symlink for plugins
-        run: ln -sf .. node_modules/dripline
+          bun-version: latest
+      - run: bun install
+      - run: bun --filter dripline build
       - name: Install all plugins
         run: |
-          npx tsx src/main.ts init 2>/dev/null || true
-          for p in plugins/*/src/index.ts; do
-            name=$(echo "$p" | cut -d/ -f2)
-            npx tsx src/main.ts plugin install "./$p" 2>/dev/null && echo "✓ $name" || echo "✗ $name (skipped)"
+          cd packages/dripline
+          bun run dev -- init 2>/dev/null || true
+          for p in ../plugins/*/src/index.ts; do
+            name=$(basename "$(dirname "$(dirname "$p")")")
+            bun run dev -- plugin install "$p" 2>/dev/null && echo "✓ $name" || echo "✗ $name (skipped)"
           done
       - name: Generate catalog data
         run: |
-          npx tsx src/main.ts tables --json 2>/dev/null | sed -n '/^\[/,$ p' > /tmp/tables.json
+          cd packages/dripline
+          bun run dev -- tables --json 2>/dev/null | sed -n '/^\[/,$ p' > /tmp/tables.json
+          cd ../..
           node -e "
             const tables = require('/tmp/tables.json');
-            const icons = require('./plugins/icons.json');
+            const icons = require('./packages/plugins/icons.json');
             const plugins = {};
             for (const t of tables) {
               const p = t.plugin;

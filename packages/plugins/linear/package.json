@@ -1,0 +1,29 @@
+{
+  "name": "dripline-plugin-linear",
+  "version": "0.1.0",
+  "description": "linear plugin for dripline",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "linear"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

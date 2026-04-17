@@ -1,0 +1,30 @@
+{
+  "name": "dripline-plugin-brew",
+  "version": "0.1.0",
+  "description": "Homebrew plugin for dripline — query installed formulae, casks, and outdated packages",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "homebrew",
+    "brew"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "dripline-plugin-system-profiler",
+  "version": "0.1.0",
+  "description": "macOS system_profiler plugin for dripline — query hardware, software, network, and disk info",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "dripline",
+    "plugin",
+    "macos",
+    "system-profiler"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "dripline": ">=0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

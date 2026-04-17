@@ -1,0 +1,19 @@
+{
+  "name": "pi-dripline-context",
+  "version": "0.1.0",
+  "description": "pi extension — injects dripline table schemas into the agent's context on session start",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "dripline"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

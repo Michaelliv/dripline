@@ -9,15 +9,27 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [dripline, dripyard]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-      - run: npm install --legacy-peer-deps
-      - run: npm install -g tsx
-      - run: npm run build
-      - name: Run tests
-        run: tsx --test src/tests/**/*.test.ts
-      - name: Run plugin tests
-        run: npm test --workspaces --if-present
+          bun-version: latest
+      - run: bun install
+      - run: bun --filter ${{ matrix.package }} build
+      - run: bun --filter ${{ matrix.package }} test
+
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      # dripline must be built first — plugins import from its dist/
+      - run: bun --filter dripline build
+      - run: bun --filter 'dripline-plugin-*' test
