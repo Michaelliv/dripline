@@ -26,3 +26,4 @@ bun.lock
 # dripline config (may contain tokens)
 .dripline/config.json
 .nanny/
+.poster/
