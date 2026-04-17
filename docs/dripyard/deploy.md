@@ -8,6 +8,7 @@ Dripyard is a single Bun HTTP server that serves both the API and the embedded R
 - Env vars for every plugin that needs credentials (`GITHUB_TOKEN`, `STRIPE_API_KEY`, etc.).
 - A port exposed (default `3457`).
 - A persistent volume for `.dripyard/` if you care about history across restarts.
+- A shared bearer token in `DRIPYARD_TOKEN` — **required for any deployment on a public URL**. See [Auth](#auth) below.
 
 ## Dockerfile
 
@@ -15,20 +16,21 @@ Dripyard is a single Bun HTTP server that serves both the API and the embedded R
 FROM oven/bun:1.1 AS base
 WORKDIR /app
 
-# Install CLIs globally
-RUN bun install -g dripline dripyard
+# Install CLIs globally, pinned for reproducibility
+ARG DRIPLINE_VERSION=0.8.0
+ARG DRIPYARD_VERSION=0.8.0
+RUN bun install -g dripline@${DRIPLINE_VERSION} dripyard@${DRIPYARD_VERSION}
 
 # Bring in your workspace
 COPY .dripline ./.dripline
-COPY .dripyard ./.dripyard
 # ^ If your plugins or config have local paths, copy those too.
 
 # (optional) install plugins at build time so the image is self-contained
-RUN dripline plugin install git:github.com/Michaelliv/dripline@v0.7.0#packages/plugins/github \
- && dripline plugin install git:github.com/Michaelliv/dripline@v0.7.0#packages/plugins/stripe
+RUN dripline plugin install git:github.com/Michaelliv/dripline@v0.8.0#packages/plugins/github \
+ && dripline plugin install git:github.com/Michaelliv/dripline@v0.8.0#packages/plugins/stripe
 
 EXPOSE 3457
-CMD ["dripyard", "serve", "--port", "3457"]
+CMD ["sh", "-c", "dripyard serve --port ${PORT:-3457}"]
 ```
 
 Tips:
@@ -44,13 +46,27 @@ docker build -t my-dripyard .
 docker run -d \
   -p 3457:3457 \
   -v dripyard-data:/app/.dripyard \
+  -e DRIPYARD_TOKEN="$(openssl rand -base64 32)" \
   -e GITHUB_TOKEN=ghp_xxx \
   -e STRIPE_API_KEY=sk_xxx \
   --name dripyard \
   my-dripyard
 ```
 
-Hit `http://localhost:3457/` and you're in.
+Hit `http://localhost:3457/`, paste the token into the login form, and you're in. Share the same token with anyone else who should have access.
+
+## Auth
+
+Dripyard 0.8+ ships with a built-in token gate. When `DRIPYARD_TOKEN` is set:
+
+- Browsers get redirected to `/login` — a minimal form that POSTs the token and sets an HTTP-only, `SameSite=Strict`, `Secure` cookie (when behind HTTPS).
+- CLI / curl / anything else sends `Authorization: Bearer <token>`.
+- `/health` is always open so platform healthchecks work.
+- Failed logins rate-limit per IP (5 / minute).
+
+Generate a high-entropy token once, store it somewhere sensible (1Password, Doppler, your platform's secret store), rotate by redeploying with a new value.
+
+For multi-user access, audit trails, or SSO, put Cloudflare Access, Tailscale, or an oauth-proxy *in front* of dripyard — the token gate and the upstream identity provider compose cleanly.
 
 ## Fly.io, Railway, Render
 
@@ -96,9 +112,10 @@ Dripyard itself does not terminate TLS. Use:
 
 ## Health, logs, observability
 
-- Server logs go to stdout — pipe them wherever you pipe everything else.
+- `GET /health` returns `ok` — always open, use it for platform healthchecks.
+- Server logs are structured one-line-per-request access logs to stdout: `POST /vex/query -> 200 (14ms) [req=abc123]`.
+- Every request gets an `X-Request-Id` header (inbound trusted, otherwise minted); use it to grep logs across the stack.
 - Worker logs are aggregated in the server UI and also written to `.dripyard/logs/`.
-- There's no built-in `/health` yet; `GET /` returning 200 is a serviceable liveness check.
 
 ## Backups
 

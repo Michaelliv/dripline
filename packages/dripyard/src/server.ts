@@ -1,10 +1,19 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { hostname, loadavg, tmpdir } from "node:os";
-import { dirname, join, normalize, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registry } from "dripline";
 import { duckdbAdapter, sqliteAdapter, Vex } from "vex-core";
-import { createHandler } from "vex-core/server";
+import {
+  accessLog,
+  bearerAuth,
+  cors,
+  createRouter,
+  errorBoundary,
+  requestId,
+  staticFiles,
+  vexHandler,
+} from "vex-core/http";
 import { LocalVexClient } from "./core/client.js";
 import { Compactor } from "./core/compactor.js";
 import {
@@ -53,6 +62,18 @@ export interface ServerOptions {
    * a cloud spawner for fly.io / k8s / docker deployments.
    */
   spawner?: Spawner;
+  /**
+   * Shared bearer token. When present (explicitly or via
+   * `DRIPYARD_TOKEN`), every HTTP request must carry
+   * `Authorization: Bearer <token>` or a `dripyard_auth` cookie set
+   * by the built-in `/login` page. When absent, the server runs
+   * open — the right default for localhost dev and tests.
+   */
+  token?: string | null;
+  /** Enable CORS. Default: true, origin `*` (dashboards typically on same origin). */
+  cors?: boolean;
+  /** Log each request to stdout. Default: true. */
+  log?: boolean;
 }
 
 export async function startServer(options: ServerOptions = {}) {
@@ -63,6 +84,12 @@ export async function startServer(options: ServerOptions = {}) {
     join(tmpdir(), `dripyard-${port}.sock`);
   const dbPath = options.dbPath ?? process.env.DRIPYARD_DB ?? ":memory:";
   const embeddedWorker = options.embeddedWorker ?? true;
+  const token =
+    options.token === undefined
+      ? process.env.DRIPYARD_TOKEN || null
+      : options.token;
+  const enableCors = options.cors ?? true;
+  const enableLog = options.log ?? true;
 
   const vex = await Vex.create({
     plugins: [
@@ -207,21 +234,16 @@ export async function startServer(options: ServerOptions = {}) {
     }
   }
 
-  const { handle } = createHandler("/vex", vex);
-
-  // Static UI — served from the built bundle next to this file.
-  // Two candidates cover both layouts: running from source
-  // (src/server.ts → ../dist/app/ui) and the published package
-  // (dist/server.js → ./app/ui).
-  //
-  // Order matters: dist/app/ui must win over any source-tree location
-  // because `src/app/ui/` also contains an index.html (the Vite entry)
-  // but no built /assets/ — picking it would let the page load while
-  // every hashed asset 404s.
+  // Locate the built UI bundle. Two candidates cover both layouts:
+  // running from source (src/server.ts → ../dist/app/ui) and the
+  // published package (dist/server.js → ./app/ui). dist must win
+  // over source — src/app/ui/ contains the Vite entry index.html
+  // but no built /assets/, and serving that would 404 every hashed
+  // script.
   const here = dirname(fileURLToPath(import.meta.url));
   const uiCandidates = [
-    resolve(here, "../dist/app/ui"), // src/server.ts → dist/app/ui (dev)
-    resolve(here, "app/ui"), // dist/server.js → dist/app/ui (published)
+    resolve(here, "../dist/app/ui"),
+    resolve(here, "app/ui"),
   ];
   const uiDir = uiCandidates.find((p) => existsSync(p)) ?? null;
   if (!uiDir)
@@ -229,75 +251,26 @@ export async function startServer(options: ServerOptions = {}) {
       `ui: no built bundle found (looked in ${uiCandidates.join(", ")}). Run \`bun --filter dripyard build\`. UI requests will 404.`,
     );
 
-  const MIME: Record<string, string> = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".json": "application/json",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-    ".map": "application/json",
-    ".txt": "text/plain; charset=utf-8",
-  };
+  // Compose the HTTP surface. Order matters: every layer above
+  // `vexHandler` + `staticFiles` gets a shot at the request first.
+  //   errorBoundary  → catches anything thrown and renders a Response
+  //   requestId      → X-Request-Id header in, out, and on ctx.state
+  //   accessLog      → one line per request once the response is known
+  //   cors           → preflight + ACL headers
+  //   bearerAuth     → /login + /logout + token gate (when configured)
+  //   vexHandler     → /vex/query | /mutate | /subscribe | /webhook/*
+  //   staticFiles    → React bundle + SPA fallback
+  const app = createRouter().use(errorBoundary());
+  app.use(requestId());
+  if (enableLog)
+    app.use(accessLog({ skipPaths: ["/health", "/favicon.ico"] }));
+  if (enableCors) app.use(cors());
+  app.get("/health", () => new Response("ok"));
+  if (token) app.use(bearerAuth({ token, brand: "dripyard" }));
+  app.mount("/vex", vexHandler(vex));
+  if (uiDir) app.use(staticFiles({ dir: uiDir }));
 
-  async function serveStatic(pathname: string): Promise<Response | null> {
-    if (!uiDir) return null;
-    // Normalize + defend against path traversal. normalize() collapses
-    // ".." segments; after that we require the result to stay inside uiDir.
-    const rel = normalize(pathname === "/" ? "/index.html" : pathname).replace(
-      /^\/+/,
-      "",
-    );
-    const abs = resolve(uiDir, rel);
-    if (!abs.startsWith(uiDir)) return null;
-
-    const file = Bun.file(abs);
-    if (await file.exists()) {
-      const ext = abs.slice(abs.lastIndexOf("."));
-      const type = MIME[ext] ?? "application/octet-stream";
-      // Hashed assets in /assets/ are safe to cache forever; everything
-      // else (index.html, icons) should revalidate so deploys show up.
-      const cacheControl = abs.includes(`${uiDir}/assets/`)
-        ? "public, max-age=31536000, immutable"
-        : "no-cache";
-      return new Response(file, {
-        headers: { "content-type": type, "cache-control": cacheControl },
-      });
-    }
-    return null;
-  }
-
-  // Shared fetch handler: serves the UI API + health + vex-core endpoints.
-  // Bound on both TCP (for the UI + remote CLI) and unix socket (for
-  // same-host worker processes). Identical surface area on both.
-  async function fetchHandler(req: Request): Promise<Response> {
-    const url = new URL(req.url);
-    if (url.pathname === "/health") return new Response("ok");
-    if (url.pathname.startsWith("/vex")) return handle(req);
-
-    // Try a real file first; if it's missing AND the request looks like
-    // a client-side route (no file extension, GET), fall through to
-    // index.html for SPA history routing.
-    if (req.method === "GET" || req.method === "HEAD") {
-      const direct = await serveStatic(url.pathname);
-      if (direct) return direct;
-      const looksLikeRoute =
-        !url.pathname.includes(".") && !url.pathname.startsWith("/vex");
-      if (looksLikeRoute) {
-        const index = await serveStatic("/index.html");
-        if (index) return index;
-      }
-    }
-
-    return new Response("not found", { status: 404 });
-  }
+  const fetchHandler = (req: Request) => app.handle(req);
 
   const tcpServer = Bun.serve({ port, fetch: fetchHandler });
 

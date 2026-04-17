@@ -88,6 +88,25 @@ dripyard status                   # orchestrator snapshot
 | `DRIPYARD_WORKER` | `worker-<hostname>` | Embedded worker name |
 | `DRIPYARD_URL` | `http://localhost:3457` | Server URL for CLI commands |
 | `DRIPYARD_SOCKET` | `<tmpdir>/dripyard-<port>.sock` | Unix socket for local workers |
+| `DRIPYARD_TOKEN` | *(unset)* | Shared bearer token. When set, all HTTP requests require it. |
+
+## Auth
+
+By default, dripyard runs **open** — correct for localhost and for dev where you're the only caller. For anything on a public URL, set `DRIPYARD_TOKEN`:
+
+```bash
+export DRIPYARD_TOKEN="$(openssl rand -base64 32)"
+dripyard serve
+```
+
+With a token set:
+
+- Browsers get redirected to `/login`, a minimal form that POSTs the token and sets an HTTP-only cookie. `/logout` clears it.
+- CLIs and curl send `Authorization: Bearer <token>` on every request.
+- `/health` bypasses auth so platform probes work without leaking the token.
+- Failed logins are rate-limited per IP (5 / minute by default).
+
+`ServerOptions` also accepts `token`, `cors`, and `log` directly if you're embedding `startServer` programmatically. Auth is one token, one gate — for multi-user or SSO, put Cloudflare Access / Tailscale / an oauth-proxy in front.
 
 ## Workspace format
 
