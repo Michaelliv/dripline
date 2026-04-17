@@ -14,5 +14,6 @@ Start here:
 - Dripyard
   - [Overview](./dripyard/overview.md)
   - [Deploying dripyard](./dripyard/deploy.md)
+- [Warehouse mode](./warehouse.md) — S3-backed accumulating storage
 
 If you want the raw architecture tour, read the repo root `CLAUDE.md` and `packages/dripline/CLAUDE.md`. These docs assume you want to *use* the tools, not modify them.
