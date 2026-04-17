@@ -4,10 +4,10 @@ Empty directory → querying APIs → dripyard deployed. Ten minutes if the wind
 
 ## 1. Prerequisites
 
-You need [Bun](https://bun.sh) 1.1+ on PATH. The CLIs run on Bun — their shebang is `#!/usr/bin/env bun`. You can install via `npm` or `bun`, but Bun must be available at runtime.
+You need [Bun](https://bun.sh) 1.3+ on PATH. The CLIs run on Bun (shebang: `#!/usr/bin/env bun`), and dripyard's HTTP router uses the `URLPattern` global that Bun ships in 1.3+. You can install via `npm` or `bun`, but Bun must be available at runtime.
 
 ```bash
-bun --version   # should print a version
+bun --version   # 1.3.0 or later
 ```
 
 ## 2. Install the CLIs
@@ -84,13 +84,24 @@ After that, plain DuckDB reads hit the synced data, and incremental cursors keep
 
 ## 8. Fire up dripyard
 
-Dripyard is the dashboard + worker layer on top of your dripline workspace:
+Dripyard is the dashboard + worker layer on top of your dripline workspace.
+
+On localhost, an open server is fine:
 
 ```bash
 dripyard serve
 ```
 
-Open the URL it prints. The UI is served directly from the Bun process — no separate dev server.
+For anything reachable from outside your machine, set `DRIPYARD_TOKEN` first — it's a shared bearer token that gates every request:
+
+```bash
+export DRIPYARD_TOKEN="$(openssl rand -base64 32)"
+dripyard serve
+```
+
+Browsers hitting the URL get redirected to `/login`; paste the token once and it lands in an HTTP-only cookie. API clients (CLI, curl, anything scripted) send `Authorization: Bearer <token>`. `/health` stays open so platform probes work.
+
+The UI is served directly from the Bun process — no separate dev server.
 
 ## 9. Deploy
 
@@ -99,8 +110,14 @@ Single Bun process, no database required beyond DuckDB files in `.dripyard/`. Se
 ## 10. Release a new version (maintainers)
 
 ```bash
-git tag v0.8.0
-git push --tags
+# bump BOTH packages/dripline/package.json and packages/dripyard/package.json to the same version
+git commit -am "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
 ```
 
-CI tests, publishes `dripline` + `dripyard` to npm, cuts a GitHub release. Plugins aren't published — consumers always pin to a git ref.
+CI tests then publishes `dripline` to npm. `dripyard` currently needs one manual `npm publish --access public` from `packages/dripyard/` — the granular automation token can't create new package versions on that name without a per-package grant; once we move to a classic automation token this becomes automatic too.
+
+Plugins aren't published — consumers always pin to a git ref.
+
+Dripline and dripyard ship **lockstep**: identical version numbers on every `v*` tag. No compatibility matrix, just match the two.
