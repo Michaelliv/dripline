@@ -14,9 +14,27 @@ node_modules/
 # Build output
 dist
 
-# Bun
+# Bun (lockfile IS committed for reproducible installs; only ignore the legacy binary format)
 bun.lockb
-bun.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# DuckDB local databases
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+
+# dripline local workspaces (accumulated data / caches)
+.dripline/cache/
+.dripline/plugins/
+.dripyard/
 
 # dotenv
 .env
