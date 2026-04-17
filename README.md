@@ -1,4 +1,8 @@
-# dripline 💧 monorepo
+<p align="center">
+  <img src="docs/assets/hero.png" alt="dripline — SQL over every API, CLI, and warehouse you actually use" width="100%">
+</p>
+
+# dripline monorepo
 
 Query anything with SQL, schedule it, watch it live.
 
