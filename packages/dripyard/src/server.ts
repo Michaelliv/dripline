@@ -258,7 +258,7 @@ export async function startServer(options: ServerOptions = {}) {
   //   accessLog      → one line per request once the response is known
   //   cors           → preflight + ACL headers
   //   bearerAuth     → /login + /logout + token gate (when configured)
-  //   vexHandler     → /vex/query | /mutate | /subscribe | /webhook/*
+  //   vexHandler     → /query | /mutate | /subscribe | /webhook/*
   //   staticFiles    → React bundle + SPA fallback
   const app = createRouter().use(errorBoundary());
   app.use(requestId());
@@ -267,7 +267,7 @@ export async function startServer(options: ServerOptions = {}) {
   if (enableCors) app.use(cors());
   app.get("/health", () => new Response("ok"));
   if (token) app.use(bearerAuth({ token, brand: "dripyard" }));
-  app.mount("/vex", vexHandler(vex));
+  app.mount("", vexHandler(vex));
   if (uiDir) app.use(staticFiles({ dir: uiDir }));
 
   const fetchHandler = (req: Request) => app.handle(req);

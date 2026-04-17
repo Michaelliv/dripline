@@ -6,7 +6,7 @@ const BASE_URL =
   process.env.DRIPYARD_URL ?? "http://localhost:3457";
 
 async function queryServer(name: string, args: Record<string, any> = {}) {
-  const res = await fetch(`${BASE_URL}/vex/query`, {
+  const res = await fetch(`${BASE_URL}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),
@@ -17,7 +17,7 @@ async function queryServer(name: string, args: Record<string, any> = {}) {
 }
 
 async function mutateServer(name: string, args: Record<string, any> = {}) {
-  const res = await fetch(`${BASE_URL}/vex/mutate`, {
+  const res = await fetch(`${BASE_URL}/mutate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),

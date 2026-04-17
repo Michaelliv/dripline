@@ -18,8 +18,16 @@ export default defineConfig({
     chunkSizeWarningLimit: 3000,
   },
   server: {
+    // Proxy every engine endpoint plus /health to the running
+    // dripyard server. Dev runs vite on a different port than
+    // dripyard; this stitches them together.
     proxy: {
-      "/vex": "http://localhost:3457",
+      "/query": "http://localhost:3457",
+      "/mutate": "http://localhost:3457",
+      "/subscribe": "http://localhost:3457",
+      "/webhook": "http://localhost:3457",
+      "/login": "http://localhost:3457",
+      "/logout": "http://localhost:3457",
       "/health": "http://localhost:3457",
     },
   },

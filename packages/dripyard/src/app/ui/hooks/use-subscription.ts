@@ -27,7 +27,7 @@ function acquire(key: string, name: string, argsStr: string): SharedSub {
   }
 
   const params = new URLSearchParams({ name, args: argsStr });
-  const source = new EventSource(`/vex/subscribe?${params}`);
+  const source = new EventSource(`/subscribe?${params}`);
 
   const sub: SharedSub = {
     source,

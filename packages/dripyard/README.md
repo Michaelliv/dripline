@@ -83,7 +83,7 @@ dripyard status                   # orchestrator snapshot
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `DRIPYARD_PORT` | `3457` | Server port (UI + `/vex` + `/health`) |
+| `DRIPYARD_PORT` | `3457` | Server port (UI + engine endpoints + `/health`) |
 | `DRIPYARD_DB` | `:memory:` | SQLite path for operational state (runs, workers, progress) |
 | `DRIPYARD_WORKER` | `worker-<hostname>` | Embedded worker name |
 | `DRIPYARD_URL` | `http://localhost:3457` | Server URL for CLI commands |

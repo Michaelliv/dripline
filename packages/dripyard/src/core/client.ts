@@ -7,7 +7,7 @@ import type { Vex } from "vex-core";
  *
  * Two implementations:
  *   - LocalVexClient  — wraps an in-process Vex directly, zero overhead
- *   - SocketVexClient — same /vex/* API over a unix domain socket
+ *   - SocketVexClient — same /query + /mutate API over a unix domain socket
  *
  * Both speak the same vex-core query/mutate protocol, so orchestrator
  * code is identical regardless of which side of the socket it runs on.
@@ -34,8 +34,8 @@ export class LocalVexClient implements VexClient {
 
 /**
  * Unix-socket client for standalone worker processes on the same host.
- * Speaks the dashboard's /vex/query + /vex/mutate endpoints unchanged —
- * the dashboard binds the same handler on TCP (for the UI) and on the
+ * Speaks the dashboard's /query + /mutate endpoints unchanged — the
+ * dashboard binds the same handler on TCP (for the UI) and on the
  * socket (for local workers).
  *
  * Bun's fetch supports `unix: <path>` natively, so the wire protocol is
@@ -49,14 +49,14 @@ export class SocketVexClient implements VexClient {
     name: string,
     args: Record<string, any> = {},
   ): Promise<T> {
-    return this.call<T>("/vex/query", name, args);
+    return this.call<T>("/query", name, args);
   }
 
   async mutate<T = any>(
     name: string,
     args: Record<string, any> = {},
   ): Promise<T> {
-    return this.call<T>("/vex/mutate", name, args);
+    return this.call<T>("/mutate", name, args);
   }
 
   private async call<T>(

@@ -1,13 +1,14 @@
 /**
  * HTTP helpers for talking to the dripyard server.
- * The vite dev server proxies /vex/* to localhost:3457.
+ * The vite dev server proxies /query, /mutate, /subscribe to
+ * localhost:3457.
  */
 
 export async function query<T = any>(
   name: string,
   args: Record<string, any> = {},
 ): Promise<T> {
-  const res = await fetch("/vex/query", {
+  const res = await fetch("/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),
@@ -21,7 +22,7 @@ export async function mutate<T = any>(
   name: string,
   args: Record<string, any> = {},
 ): Promise<T> {
-  const res = await fetch("/vex/mutate", {
+  const res = await fetch("/mutate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),

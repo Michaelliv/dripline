@@ -11,7 +11,7 @@
     },
     "packages/dripline": {
       "name": "dripline",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "bin": {
         "dripline": "./dist/main.js",
       },
@@ -31,7 +31,7 @@
     },
     "packages/dripyard": {
       "name": "dripyard",
-      "version": "0.8.1",
+      "version": "0.9.0",
       "bin": {
         "dripyard": "./dist/main.js",
       },
@@ -39,8 +39,8 @@
         "@miclivs/flaregun": "0.2.0",
         "chalk": "^5.6.2",
         "commander": "^14.0.3",
-        "dripline": "^0.8.0",
-        "vex-core": "^0.3.1",
+        "dripline": "^0.9.0",
+        "vex-core": "^0.3.2",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.3.14",
@@ -1659,7 +1659,7 @@
 
     "uuid": ["uuid@11.1.0", "", { "bin": { "uuid": "dist/esm/bin/uuid" } }, "sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A=="],
 
-    "vex-core": ["vex-core@0.3.1", "", { "dependencies": { "@duckdb/node-api": "^1.5.2-r.1", "nanoid": "^5.1.7" }, "peerDependencies": { "react": "^19.2.4" }, "optionalPeers": ["react"] }, "sha512-d/VMes/lTTqa1kiu+cIVS98vi54Ej093AOItUeu2fBTZ2npQ+z0i3VCNNJEQPQFWCPNQBn9yW7jLx8vNY+qRzA=="],
+    "vex-core": ["vex-core@0.3.2", "", { "dependencies": { "@duckdb/node-api": "^1.5.2-r.1", "nanoid": "^5.1.7" }, "peerDependencies": { "react": "^19.2.4" }, "optionalPeers": ["react"] }, "sha512-M/NbrI8HebkZ4bx2xhHNYAflmpxts2pbZxayppd9jWHoXmTFXRR8u4PEP4a1epjrvZIyZr52ckrqetglF4A/+g=="],
 
     "victory-vendor": ["victory-vendor@37.3.6", "", { "dependencies": { "@types/d3-array": "^3.0.3", "@types/d3-ease": "^3.0.0", "@types/d3-interpolate": "^3.0.1", "@types/d3-scale": "^4.0.2", "@types/d3-shape": "^3.1.0", "@types/d3-time": "^3.0.0", "@types/d3-timer": "^3.0.0", "d3-array": "^3.1.6", "d3-ease": "^3.0.1", "d3-interpolate": "^3.0.1", "d3-scale": "^4.0.2", "d3-shape": "^3.1.0", "d3-time": "^3.0.0", "d3-timer": "^3.0.1" } }, "sha512-SbPDPdDBYp+5MJHhBCAyI7wKM3d5ivekigc2Dk2s7pgbZ9wIgIBYGVw4zGHBml/qTFbexrofXW6Gu4noGxrOwQ=="],
 

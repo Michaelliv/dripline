@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 async function query(name: string, args: Record<string, any> = {}) {
-  const res = await fetch(`${baseUrl}/vex/query`, {
+  const res = await fetch(`${baseUrl}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),
@@ -30,7 +30,7 @@ async function query(name: string, args: Record<string, any> = {}) {
 }
 
 async function mutate(name: string, args: Record<string, any> = {}) {
-  const res = await fetch(`${baseUrl}/vex/mutate`, {
+  const res = await fetch(`${baseUrl}/mutate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, args }),

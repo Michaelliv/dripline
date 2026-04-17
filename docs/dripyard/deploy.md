@@ -114,7 +114,7 @@ Dripyard itself does not terminate TLS. Use:
 ## Health, logs, observability
 
 - `GET /health` returns `ok` — always open, use it for platform healthchecks.
-- Server logs are structured one-line-per-request access logs to stdout: `POST /vex/query -> 200 (14ms) [req=abc123]`.
+- Server logs are structured one-line-per-request access logs to stdout: `POST /query -> 200 (14ms) [req=abc123]`.
 - Every request gets an `X-Request-Id` header (inbound trusted, otherwise minted); use it to grep logs across the stack.
 - Worker logs are aggregated in the server UI and also written to `.dripyard/logs/`.
 
