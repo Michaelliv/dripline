@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "packages/plugins/*"
+    "packages/plugins/*",
+    "packages/dripyard/src/app/ui"
   ],
   "scripts": {
     "build": "bun run --filter '*' build",
