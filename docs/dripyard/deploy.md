@@ -13,7 +13,8 @@ Dripyard is a single Bun HTTP server that serves both the API and the embedded R
 ## Dockerfile
 
 ```dockerfile
-FROM oven/bun:1.1 AS base
+# Bun 1.3+ required — vex-core/http uses the URLPattern global.
+FROM oven/bun:1.3 AS base
 WORKDIR /app
 
 # Install CLIs globally, pinned for reproducibility
