@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startServer } from "../src/server.js";
 
 let app: Awaited<ReturnType<typeof startServer>>;
@@ -90,5 +93,71 @@ describe("server", () => {
     const result = await query("workers.list");
     expect(result.data.length).toBeGreaterThanOrEqual(1);
     expect(result.data[0].status).toBe("idle");
+  });
+});
+
+// Separate describe block because these tests own their own server
+// lifecycle — they restart dripyard against a persisted db file to
+// simulate a container reboot (Render, docker, systemd). The ghost-row
+// crash this guards against was invisible with :memory:, so we need
+// real disk.
+describe("server (persisted db)", () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "dripyard-test-"));
+    dbPath = join(dir, "dripyard.db");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("second boot drops the ghost worker row instead of crashing", async () => {
+    // First boot: registers the embedded worker, row persists to disk.
+    const first = await startServer({
+      port: 0,
+      dbPath,
+      log: false,
+      orchestratorOptions: {
+        resolvePlugin: () =>
+          ({ name: "mock", version: "1.0.0", tables: [] }) as any,
+      },
+    });
+    const firstId = first.workerId;
+    await first.close();
+
+    // Second boot against the same file — the row from the first boot
+    // is still there. Without ghost-cleanup this throws
+    // UNIQUE constraint failed: workers.name and kills the process.
+    const second = await startServer({
+      port: 0,
+      dbPath,
+      log: false,
+      orchestratorOptions: {
+        resolvePlugin: () =>
+          ({ name: "mock", version: "1.0.0", tables: [] }) as any,
+      },
+    });
+    try {
+      expect(second.workerId).toBeTruthy();
+      expect(second.workerId).not.toBe(firstId);
+      const res = await fetch(
+        `http://localhost:${second.server.port}/query`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "workers.list", args: {} }),
+        },
+      );
+      const json = (await res.json()) as { data: Array<{ _id: string }> };
+      // Exactly one row: the ghost got deregistered, the live worker
+      // took its place.
+      expect(json.data).toHaveLength(1);
+      expect(json.data[0]._id).toBe(second.workerId!);
+    } finally {
+      await second.close();
+    }
   });
 });

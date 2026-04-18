@@ -180,6 +180,19 @@ export async function startServer(options: ServerOptions = {}) {
     // connecting over the unix socket will register themselves via the
     // same workers.register mutation and show up alongside this one.
     const workerName = process.env.DRIPYARD_WORKER ?? `worker-${hostname()}`;
+    // A stale row with this name may exist from a previous process that
+    // died without deregistering (SIGKILL, OOM, container restart on a
+    // persisted DB — Render, docker, systemd). The `unique: [["name"]]`
+    // constraint on workers would otherwise make workers.register throw
+    // and crash boot, producing a permanent crash-loop. The previous
+    // process is gone — its row is a ghost. Drop it so we can register
+    // fresh.
+    const existing = (await vex.query("workers.list", {})) as Array<{
+      _id: string;
+      name: string;
+    }>;
+    const ghost = existing.find((w) => w.name === workerName);
+    if (ghost) await vex.mutate("workers.deregister", { id: ghost._id });
     workerId = (await vex.mutate("workers.register", {
       name: workerName,
       host: hostname(),
