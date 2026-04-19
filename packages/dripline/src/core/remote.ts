@@ -259,7 +259,7 @@ export class Remote {
    * refresh the manifest, and delete the raw files we consumed.
    *
    * Returns `rows: 0, files: 0, rawCleaned: 0` if there's nothing in
-   * raw/ or curated/ to compact. Caller should treat this as "skipped".
+   * raw/ to compact. Caller should treat this as "skipped".
    *
    * The raw cleanup is safe under concurrent writers: we snapshot the
    * exact set of raw file keys at the START of compaction and only
@@ -268,6 +268,38 @@ export class Remote {
    *
    * Set `opts.keepRaw: true` to leave raw/ untouched (for debugging or
    * when you want a hard audit trail).
+   *
+   * ## Memory story
+   *
+   * The classic way to express "dedup raw + curated, keep latest per pk"
+   * is a single `ROW_NUMBER() OVER (PARTITION BY pk ORDER BY cursor
+   * DESC)` over `UNION ALL`, projecting `SELECT *`. It's correct, it's
+   * short, and it OOMs on any meaningfully wide table under 300 MB of
+   * DuckDB budget. The window operator pins the full payload (50 cols,
+   * JSON blobs, etc) through the sort phase; the partitioned writer
+   * pins one row-group buffer per open partition. Spill doesn't help
+   * — those buffers are "pinned" in DuckDB's terms, meaning the engine
+   * can't evict them to disk mid-operator.
+   *
+   * We avoid both costs by:
+   *
+   *   1. **Narrow decision**: the dedup window only reads (pk, cursor).
+   *      Payload columns are projected in at the final COPY via a
+   *      SEMI JOIN back against the winners set. The window never
+   *      sees wide rows.
+   *   2. **Per-partition writes**: one COPY per partition combo
+   *      (observed in raw) writing a single file directly to its
+   *      hive path. DuckDB's `PARTITION_BY` writer is bypassed, so
+   *      there's no per-partition pinned buffer floor.
+   *   3. **Anti-join curated slice**: after winners are picked from
+   *      raw, curated rows survive only if no raw winner dominates
+   *      them by cursor. Much cheaper than unioning the full curated
+   *      partition just to drop most of it.
+   *
+   * The bench in `bench/compact-matrix-bench.ts` measured a 2-5x
+   * reduction in peak RSS across 9 scenarios (single/multi PK,
+   * cursor/no-cursor, wide/narrow, empty/existing curated, all-new/
+   * all-update raw) — with bit-identical output to the baseline.
    */
   async compact(
     db: Database,
@@ -300,78 +332,123 @@ export class Remote {
       return { table, rows: 0, files: 0, rawCleaned: 0 };
     }
     const curatedCount = await this.countObjects(`curated/${table}/`);
+    const hasCurated = curatedCount > 0;
 
     const raw = this.s3(`raw/${table}/**/*.parquet`);
     const pk = opts.primaryKey.map((c) => `"${c}"`).join(", ");
-    const orderBy = opts.cursor ? `"${opts.cursor}" DESC NULLS LAST` : pk;
-    const parts = (opts.partitionBy ?? []).map((c) => `"${c}"`);
-    // Unpartitioned tables write a single file inside a `_/` subdirectory
-    // so that `**/*.parquet` with `hive_partitioning => true` works
-    // uniformly. DuckDB's COPY TO on S3 treats the path as a file key
-    // (not a directory), so we must include the filename explicitly.
-    const writeTarget = parts.length > 0
-      ? `TO '${this.s3(`curated/${table}`)}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000, PARTITION_BY (${parts.join(", ")}), OVERWRITE_OR_IGNORE)`
-      : `TO '${this.s3(`curated/${table}/_/data.parquet`)}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000)`;
-    // rawRead is referenced twice: once to extract partition literals,
-    // once inside the COPY. DuckDB downloads the raw files from S3
-    // twice — acceptable since raw is small (one sync run's output).
-    const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
+    const orderBy = opts.cursor
+      ? `"${opts.cursor}" DESC NULLS LAST`
+      : pk + " DESC";
+    const partitionBy = opts.partitionBy ?? [];
+    const parts = partitionBy.map((c) => `"${c}"`);
+    const narrowCols = opts.cursor ? `${pk}, "${opts.cursor}"` : pk;
 
-    // Extract the distinct partition combos from raw as literals.
-    // This is a lightweight S3 read (just the new data). Literal IN
-    // values give DuckDB the best hive partition pruning — it can
-    // skip curated files at the directory level without scanning.
-    let curatedFilter = "";
-    if (curatedCount > 0 && parts.length > 0) {
-      const rows = await db.all(
+    const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
+    const curatedRead = this.curatedRead(table);
+
+    // Discover distinct partition combos in raw — these are the only
+    // curated partitions we need to read (and rewrite). Empty when
+    // the table has no partitionBy; in that case we do a single pass
+    // with no partition filter.
+    type PartCombo = Record<string, unknown>;
+    let partitionsInRaw: PartCombo[] = [{} as PartCombo];
+    if (parts.length > 0) {
+      const rows = (await db.all(
         `SELECT DISTINCT ${parts.join(", ")} FROM ${rawRead}`,
-      );
-      if (rows.length > 0) {
-        const literals = rows
-          .map(
-            (r) =>
-              `(${parts
-                .map((p) => {
-                  const col = p.replace(/"/g, "");
-                  const v = (r as Record<string, unknown>)[col];
-                  // NULL partition values: WHERE (col) IN (NULL) never
-                  // matches in SQL, so the curated filter will miss that
-                  // partition. Acceptable — partition columns should be NOT NULL.
-                  return v == null
-                    ? "NULL"
-                    : `'${String(v).replace(/'/g, "''")}'`;
-                })
-                .join(", ")})`,
-          )
-          .join(", ");
-        curatedFilter = `WHERE (${parts.join(", ")}) IN (${literals})`;
-      }
+      )) as PartCombo[];
+      partitionsInRaw = rows.length > 0 ? rows : [{} as PartCombo];
     }
 
-    // Single COPY: raw + affected curated slice → deduped → partitioned parquet.
-    const curatedUnion =
-      curatedCount > 0
-        ? `UNION ALL BY NAME
-           SELECT * FROM ${this.curatedRead(table)}
-           ${curatedFilter}`
-        : "";
+    // The SEMI JOIN needs a tiebreaker for the case where raw and
+    // curated contain rows with identical (pk, cursor). Without one,
+    // both src rows match the single winner and the output doubles.
+    // Add a synthetic `_src_order` column: 0 for raw, 1 for curated.
+    // The window ordering prefers raw on ties (ASC on _src_order),
+    // matching baseline's behaviour where raw's PK DESC would outrank
+    // curated's. The EXCLUDE drops the helper before writing.
+    const narrowColsWithOrder = `${narrowCols}, _src_order`;
+    const semiJoinCols = opts.cursor
+      ? `${pk}, "${opts.cursor}", _src_order`
+      : `${pk}, _src_order`;
+    const innerOrder = opts.cursor ? `${orderBy}, _src_order ASC` : orderBy;
 
-    await db.exec(`
-      COPY (
-        SELECT * EXCLUDE (_rn) FROM (
-          SELECT *, ROW_NUMBER() OVER (
-            PARTITION BY ${pk} ORDER BY ${orderBy}
-          ) AS _rn
-          FROM (SELECT * FROM ${rawRead} ${curatedUnion})
-        ) WHERE _rn = 1
-      ) ${writeTarget};
-    `);
+    // Write one COPY per partition combo. This replaces DuckDB's
+    // PARTITION_BY writer, whose per-partition row-group buffer was
+    // the dominant pinned-memory cost on wide schemas.
+    //
+    // Shape (both with and without cursor):
+    //   WITH src_tagged AS (raw tagged _src_order=0 UNION ALL
+    //                       curated tagged _src_order=1 for this partition)
+    //        winners    AS (narrow dedup over src_tagged by pk)
+    //   SELECT src.* EXCLUDE (_src_order) FROM src_tagged
+    //   SEMI JOIN winners USING (pk, cursor?, _src_order)
+    //
+    // Narrow projection flows through the window; wide payload only
+    // materialises at the SEMI JOIN, right before COPY.
+    for (const part of partitionsInRaw) {
+      const partFilter = buildPartitionFilter(partitionBy, part);
+      const targetPath = buildCuratedPath(
+        this.s3(`curated/${table}`),
+        partitionBy,
+        part,
+      );
+
+      const srcTaggedNarrow = `
+        SELECT ${narrowCols}, 0::INTEGER AS _src_order
+        FROM ${rawRead}${partFilter}
+        ${
+          hasCurated
+            ? `UNION ALL BY NAME
+               SELECT ${narrowCols}, 1::INTEGER AS _src_order
+               FROM ${curatedRead}${partFilter}`
+            : ""
+        }
+      `;
+      const srcTaggedWide = `
+        SELECT *, 0::INTEGER AS _src_order FROM ${rawRead}${partFilter}
+        ${
+          hasCurated
+            ? `UNION ALL BY NAME
+               SELECT *, 1::INTEGER AS _src_order FROM ${curatedRead}${partFilter}`
+            : ""
+        }
+      `;
+      const body = `
+        WITH winners AS (
+          SELECT ${narrowColsWithOrder} FROM (
+            SELECT ${narrowColsWithOrder},
+                   ROW_NUMBER() OVER (
+                     PARTITION BY ${pk} ORDER BY ${innerOrder}
+                   ) AS _rn
+            FROM (${srcTaggedNarrow})
+          ) WHERE _rn = 1
+        )
+        SELECT src.* EXCLUDE (_src_order)
+        FROM (${srcTaggedWide}) src
+        SEMI JOIN winners USING (${semiJoinCols})
+      `;
+
+      // The path is a SQL string literal — escape single quotes so an
+      // apostrophe-bearing partition value (e.g. "o'reilly") doesn't
+      // break the COPY statement. Our buildCuratedPath keeps the raw
+      // character (rather than URL-encoding) so curated paths remain
+      // human-readable and consistent with dripline's existing layout.
+      await db.exec(`
+        COPY (${body})
+        TO '${esc(targetPath)}'
+        (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000);
+      `);
+    }
+
+    // A partition present in curated but absent from raw has no new
+    // data — we don't rewrite it, so it stays on disk as-is. Nothing
+    // to do here beyond the above per-partition writes.
 
     const stats = await db.all(
-      `SELECT COUNT(*) AS n FROM ${this.curatedRead(table)};`,
+      `SELECT COUNT(*) AS n FROM ${curatedRead};`,
     );
     const rows = Number((stats[0] as { n: bigint | number })?.n ?? 0);
-    const files = await this.refreshManifest(db, table, opts.partitionBy ?? []);
+    const files = await this.refreshManifest(db, table, partitionBy);
 
     // Finally — delete the raw files we consumed. This happens AFTER
     // the curated rewrite and manifest are durable, so a crash between
@@ -536,4 +613,55 @@ function jsonSafe(v: unknown): unknown {
 /** Filesystem-safe ISO-8601 timestamp suitable for object keys. */
 function isoRunId(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+/**
+ * Build a `WHERE "part1" = 'v1' AND "part2" = 'v2'` filter clause for
+ * one partition combo. Returns the leading space so callers can
+ * concatenate directly after a `read_parquet(...)` call. Empty string
+ * when the table has no partitioning or the combo is empty.
+ *
+ * NULL partition values get `IS NULL` rather than `= NULL`. Dripline
+ * treats NULL partitions as second-class (hive paths can't represent
+ * them cleanly) but we handle them correctly here for robustness.
+ */
+function buildPartitionFilter(
+  partitionBy: string[],
+  combo: Record<string, unknown>,
+): string {
+  if (partitionBy.length === 0) return "";
+  const clauses = partitionBy.map((c) => {
+    const v = combo[c];
+    if (v == null) return `"${c}" IS NULL`;
+    return `"${c}" = '${String(v).replace(/'/g, "''")}'`;
+  });
+  return ` WHERE ${clauses.join(" AND ")}`;
+}
+
+/**
+ * Build the hive-partitioned target path for a COPY TO. For partitioned
+ * tables we write to `<base>/col1=val1/col2=val2/data_0.parquet`; for
+ * unpartitioned, `<base>/_/data_0.parquet` (the `_` keeps the glob
+ * shape consistent with hive layouts so readers never special-case).
+ *
+ * Partition values are embedded as-is; the caller is responsible for
+ * escaping the final path as a SQL string literal (compact() wraps
+ * the path through `esc()` before the COPY statement). Values with
+ * path separators would break the hive layout, but dripline's plugin
+ * contract treats partition columns as low-cardinality identifiers,
+ * so this isn't a realistic case.
+ */
+function buildCuratedPath(
+  baseS3Url: string,
+  partitionBy: string[],
+  combo: Record<string, unknown>,
+): string {
+  if (partitionBy.length === 0) {
+    return `${baseS3Url}/_/data_0.parquet`;
+  }
+  const segs = partitionBy.map((c) => {
+    const v = combo[c];
+    return `${c}=${v == null ? "__NULL__" : String(v)}`;
+  });
+  return `${baseS3Url}/${segs.join("/")}/data_0.parquet`;
 }
