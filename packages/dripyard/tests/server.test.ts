@@ -160,4 +160,68 @@ describe("server (persisted db)", () => {
       await second.close();
     }
   });
+
+  test("boot deregisters ALL older ghost rows, not just same-name", async () => {
+    // Kubernetes (Render, GKE, EKS) assigns a fresh pod-name suffix
+    // on every redeploy, so successive boots register workers with
+    // DIFFERENT names — the unique constraint never fires, but ghost
+    // rows accumulate. This test simulates three prior pods by varying
+    // DRIPYARD_WORKER between boots, then checks the final boot keeps
+    // ONLY its own row.
+    const boot = async (name: string) => {
+      process.env.DRIPYARD_WORKER = name;
+      try {
+        const srv = await startServer({
+          port: 0,
+          dbPath,
+          log: false,
+          orchestratorOptions: {
+            resolvePlugin: () =>
+              ({ name: "mock", version: "1.0.0", tables: [] }) as any,
+          },
+        });
+        const id = srv.workerId;
+        await srv.close();
+        return id;
+      } finally {
+        delete process.env.DRIPYARD_WORKER;
+      }
+    };
+
+    await boot("worker-pod-aaa-1");
+    await boot("worker-pod-bbb-2");
+    await boot("worker-pod-ccc-3");
+
+    // Fourth boot — the live one we'll inspect.
+    process.env.DRIPYARD_WORKER = "worker-pod-ddd-4";
+    const live = await startServer({
+      port: 0,
+      dbPath,
+      log: false,
+      orchestratorOptions: {
+        resolvePlugin: () =>
+          ({ name: "mock", version: "1.0.0", tables: [] }) as any,
+      },
+    });
+    delete process.env.DRIPYARD_WORKER;
+
+    try {
+      const res = await fetch(
+        `http://localhost:${live.server.port}/query`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "workers.list", args: {} }),
+        },
+      );
+      const json = (await res.json()) as {
+        data: Array<{ _id: string; name: string }>;
+      };
+      expect(json.data).toHaveLength(1);
+      expect(json.data[0]._id).toBe(live.workerId!);
+      expect(json.data[0].name).toBe("worker-pod-ddd-4");
+    } finally {
+      await live.close();
+    }
+  });
 });

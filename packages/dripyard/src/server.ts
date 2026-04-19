@@ -180,19 +180,35 @@ export async function startServer(options: ServerOptions = {}) {
     // connecting over the unix socket will register themselves via the
     // same workers.register mutation and show up alongside this one.
     const workerName = process.env.DRIPYARD_WORKER ?? `worker-${hostname()}`;
-    // A stale row with this name may exist from a previous process that
-    // died without deregistering (SIGKILL, OOM, container restart on a
-    // persisted DB — Render, docker, systemd). The `unique: [["name"]]`
-    // constraint on workers would otherwise make workers.register throw
-    // and crash boot, producing a permanent crash-loop. The previous
-    // process is gone — its row is a ghost. Drop it so we can register
-    // fresh.
+    // Ghost cleanup. Old worker rows may exist from previous processes
+    // that died without deregistering (SIGKILL, OOM, Render redeploy
+    // rotating the pod). Two failure modes to cover:
+    //
+    //   1. Same name   — the `unique: [["name"]]` constraint would make
+    //                    workers.register throw.
+    //   2. Different names — Render's Kubernetes deployment assigns a
+    //                    fresh pod-name suffix on every redeploy, so
+    //                    successive boots register rows that never
+    //                    collide by name but accumulate as ghosts.
+    //                    Cosmetically wrong and a dispatch landmine:
+    //                    a "pick the first idle worker" code path
+    //                    could target a dead pod.
+    //
+    // Rule: we're the newest pod on this host by construction (we just
+    // booted). Deregister every worker row whose startedAt is strictly
+    // older than our own startedAt — captured BEFORE the register so
+    // our row can't self-delete. Safe under multi-worker: concurrent
+    // siblings boot within milliseconds of each other and cross-keep.
+    const registrationAt = Date.now();
     const existing = (await vex.query("workers.list", {})) as Array<{
       _id: string;
-      name: string;
+      startedAt: number;
     }>;
-    const ghost = existing.find((w) => w.name === workerName);
-    if (ghost) await vex.mutate("workers.deregister", { id: ghost._id });
+    for (const ghost of existing) {
+      if (ghost.startedAt < registrationAt) {
+        await vex.mutate("workers.deregister", { id: ghost._id });
+      }
+    }
     workerId = (await vex.mutate("workers.register", {
       name: workerName,
       host: hostname(),
