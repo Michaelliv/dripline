@@ -111,31 +111,69 @@ export class Compactor {
 }
 
 /**
+ * Structured result of one table's compaction tick.
+ *
+ *   ok          compaction ran and rewrote curated + manifest
+ *   skipped     lease held by another worker, or nothing to compact
+ *   error       DuckDB or S3 failure — details in `error`
+ */
+export interface CompactTableResult {
+  table: string;
+  status: "ok" | "skipped" | "error";
+  reason?: string;
+  rows: number;
+  files: number;
+  rawCleaned: number;
+  durationMs: number;
+  error?: string;
+}
+
+/**
  * One table's compaction tick. Mirrors `compactTable` in dripline's
  * `commands/compact.ts` — same lease + DuckDB lifecycle, same
  * partitionBy fallback chain. Errors are caught and logged so a single
  * bad table can't kill the Vex job runner.
+ *
+ * Exported so an ad-hoc trigger (e.g. workspace.compactNow) can reuse
+ * the exact same code path the scheduler runs. Returns a structured
+ * result; the scheduled handler ignores it, the ad-hoc trigger reports
+ * it to the caller.
  */
-async function runCompactTable(
+export async function runCompactTable(
   table: TableDef,
   remote: Remote,
   leaseStore: LeaseStore,
   maxRuntimeMs: number,
-): Promise<void> {
+): Promise<CompactTableResult> {
+  const start = Date.now();
+  const base: CompactTableResult = {
+    table: table.name,
+    status: "skipped",
+    rows: 0,
+    files: 0,
+    rawCleaned: 0,
+    durationMs: 0,
+  };
+  const finish = (
+    extra: Partial<CompactTableResult>,
+  ): CompactTableResult => ({
+    ...base,
+    ...extra,
+    durationMs: Date.now() - start,
+  });
+
   const leaseKey = `compact-${table.name}`;
   let lease: Lease | null = null;
   try {
     lease = await leaseStore.acquire(leaseKey, maxRuntimeMs);
   } catch (err) {
-    console.error(
-      `[compact.${table.name}] lease acquire failed:`,
-      (err as Error).message,
-    );
-    return;
+    const msg = (err as Error).message;
+    console.error(`[compact.${table.name}] lease acquire failed:`, msg);
+    return finish({ status: "error", error: msg });
   }
   // Held by another worker, or recently compacted by a sibling. Quiet
   // skip — this is the expected path for most ticks under multi-worker.
-  if (lease == null) return;
+  if (lease == null) return finish({ reason: "lease held" });
 
   const partitionBy =
     table.partitionBy ??
@@ -143,20 +181,34 @@ async function runCompactTable(
       ? table.keyColumns.map((k) => k.name)
       : []);
 
-  const start = Date.now();
-  const db = await Database.create(":memory:");
+  // createForContainer() applies a hard memory cap + a temp directory
+  // so compaction spills hash aggregates / sorts / joins to disk
+  // instead of OOMing on memory-constrained hosts (Render starter at
+  // 512 MB, etc). Without this the compactor enters a permanent OOM
+  // loop on any large table. Overrides via DRIPLINE_DUCKDB_* env vars.
+  const db = await Database.createForContainer(":memory:");
   try {
     const result = await remote.compact(db, table.name, {
       primaryKey: table.primaryKey ?? [],
       cursor: table.cursor,
       partitionBy,
     });
-    if (result.rows === 0 && result.files === 0) return; // nothing to do
+    if (result.rows === 0 && result.files === 0) {
+      return finish({ reason: "no raw files" });
+    }
     console.log(
       `[compact.${table.name}] ${result.files} curated file(s), ${result.rows} row(s), ${result.rawCleaned} raw cleaned in ${Date.now() - start}ms`,
     );
+    return finish({
+      status: "ok",
+      rows: result.rows,
+      files: result.files,
+      rawCleaned: result.rawCleaned,
+    });
   } catch (err) {
-    console.error(`[compact.${table.name}] failed:`, (err as Error).message);
+    const msg = (err as Error).message;
+    console.error(`[compact.${table.name}] failed:`, msg);
+    return finish({ status: "error", error: msg });
   } finally {
     await db.close();
     // Compaction has no cooldown — release on every exit path so the

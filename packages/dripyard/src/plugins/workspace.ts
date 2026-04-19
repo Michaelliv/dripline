@@ -1,5 +1,6 @@
-import { Database, Remote } from "dripline";
+import { Database, LeaseStore, Remote, registry, resolveRemote } from "dripline";
 import type { VexPluginAPI } from "vex-core";
+import { runCompactTable } from "../core/compactor.js";
 import { getActiveWorkspace } from "../core/workspace.js";
 
 /**
@@ -291,6 +292,61 @@ export function workspacePlugin(api: VexPluginAPI) {
    *   - Timeout (default 30s) via AbortSignal; DuckDB's in-flight
    *     query is interrupted.
    */
+  /**
+   * Trigger compaction on demand, bypassing the scheduler. Pass
+   * `tables: ["foo", "bar"]` to limit to specific tables, or omit for
+   * all compactable tables (those with a primary key).
+   *
+   * Runs synchronously and returns a structured result per table. The
+   * heavy paths live in `runCompactTable` — same code the scheduler
+   * calls every 30 minutes, so results here reflect production
+   * behavior exactly.
+   *
+   * Lease-protected: if another worker is already compacting a table,
+   * that entry comes back `skipped` with `reason: "lease held"` — this
+   * is the correct behavior and not an error.
+   */
+  api.registerMutation("compactNow", {
+    args: {},
+    async handler(_ctx, args) {
+      const ws = getActiveWorkspace();
+      if (!ws?.remote) {
+        throw new Error("No remote configured for this workspace.");
+      }
+      const remote = new Remote(ws.remote);
+      const leaseStore = LeaseStore.fromRemote(resolveRemote(ws.remote));
+      const maxRuntimeMs =
+        typeof args.maxRuntimeMs === "number" && args.maxRuntimeMs > 0
+          ? args.maxRuntimeMs
+          : 10 * 60 * 1000;
+
+      const filter = Array.isArray(args.tables)
+        ? new Set((args.tables as unknown[]).map(String))
+        : null;
+
+      const results = [];
+      for (const { table } of registry.getAllTables()) {
+        if (!table.primaryKey || table.primaryKey.length === 0) continue;
+        if (filter && !filter.has(table.name)) continue;
+        results.push(
+          await runCompactTable(table, remote, leaseStore, maxRuntimeMs),
+        );
+      }
+
+      if (filter) {
+        // Validate explicit names so typos don't silently return empty.
+        const found = new Set(results.map((r) => r.table));
+        const missing = [...filter].filter((t) => !found.has(t));
+        if (missing.length > 0) {
+          throw new Error(
+            `Unknown or non-compactable tables: ${missing.join(", ")}`,
+          );
+        }
+      }
+      return { tables: results };
+    },
+  });
+
   api.registerMutation("runSql", {
     args: { sql: "string" },
     async handler(_ctx, args) {
