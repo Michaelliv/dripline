@@ -94,6 +94,29 @@ export interface DatabaseOptions {
   /** Memory cap for the instance (e.g. `"1GB"`, `"512MB"`). */
   memoryLimit?: string;
   /**
+   * Spill directory for out-of-core hash aggregates, sorts, and
+   * joins. When set, DuckDB streams intermediate state to disk
+   * instead of OOMing once `memoryLimit` is hit. Critical on
+   * memory-constrained containers (Render starter at 512 MB, etc).
+   * Without this, a hash-aggregate / sort larger than the memory
+   * cap kills the process instead of spilling.
+   */
+  tempDirectory?: string;
+  /**
+   * Set `preserve_insertion_order`. Pass `false` to let the planner
+   * skip an ordering step on streaming paths — meaningfully cheaper
+   * on wide scans and compaction COPYs where insertion order is
+   * irrelevant. Default: unset (DuckDB's default, `true`).
+   */
+  preserveInsertionOrder?: boolean;
+  /**
+   * Set `enable_object_cache`. Keeps parquet metadata between
+   * queries so repeat reads skip the footer download — a big win
+   * for the compactor, which reads the same manifest'd curated
+   * files on every run.
+   */
+  objectCache?: boolean;
+  /**
    * Extra raw DuckDB config keys. Merged on top of the friendly
    * options above — so setting both `threads: 4` and
    * `duckdbOptions: { threads: "8" }` picks the raw value.
@@ -114,8 +137,63 @@ function buildDuckDBOptions(
   if (mode) out.access_mode = mode;
   if (opts.threads != null) out.threads = String(opts.threads);
   if (opts.memoryLimit) out.memory_limit = opts.memoryLimit;
+  if (opts.tempDirectory) out.temp_directory = opts.tempDirectory;
+  if (opts.preserveInsertionOrder != null)
+    out.preserve_insertion_order = String(opts.preserveInsertionOrder);
+  if (opts.objectCache != null)
+    out.enable_object_cache = String(opts.objectCache);
   Object.assign(out, opts.duckdbOptions ?? {});
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Defaults applied by {@link Database.createForContainer}. Each can
+ * be overridden with the matching env var — operators tuning a box
+ * from the outside don't need to patch code.
+ *
+ *   DRIPLINE_DUCKDB_MEMORY_LIMIT   e.g. "300MB"
+ *   DRIPLINE_DUCKDB_THREADS        e.g. "1"
+ *   DRIPLINE_DUCKDB_TEMP_DIR       e.g. "/tmp/duckdb-spill"
+ *
+ * The defaults target a 512 MB container (Render starter). They're
+ * conservative on purpose — a 2 GB box just sees more headroom, never
+ * less. Callers that explicitly pass any of these fields in the
+ * opts argument win over both env vars and defaults.
+ */
+const CONTAINER_DEFAULTS = {
+  memoryLimit: "300MB",
+  threads: 1,
+  tempDirectory: "/tmp/duckdb-spill",
+  preserveInsertionOrder: false,
+  objectCache: true,
+} as const;
+
+function resolveContainerOptions(
+  overrides: DatabaseOptions,
+): DatabaseOptions {
+  return {
+    memoryLimit:
+      overrides.memoryLimit ??
+      process.env.DRIPLINE_DUCKDB_MEMORY_LIMIT ??
+      CONTAINER_DEFAULTS.memoryLimit,
+    threads:
+      overrides.threads ??
+      (process.env.DRIPLINE_DUCKDB_THREADS
+        ? Number(process.env.DRIPLINE_DUCKDB_THREADS)
+        : CONTAINER_DEFAULTS.threads),
+    tempDirectory:
+      overrides.tempDirectory ??
+      process.env.DRIPLINE_DUCKDB_TEMP_DIR ??
+      CONTAINER_DEFAULTS.tempDirectory,
+    preserveInsertionOrder:
+      overrides.preserveInsertionOrder ??
+      CONTAINER_DEFAULTS.preserveInsertionOrder,
+    objectCache: overrides.objectCache ?? CONTAINER_DEFAULTS.objectCache,
+    // Pass-through fields the caller may have set for other reasons.
+    readOnly: overrides.readOnly,
+    accessMode: overrides.accessMode,
+    duckdbOptions: overrides.duckdbOptions,
+  };
 }
 
 /**
@@ -165,6 +243,29 @@ export class Database {
       : await DuckDBInstance.create(path);
     const conn = await inst.connect();
     return new Database(inst, conn, true);
+  }
+
+  /**
+   * Open a DuckDB with container-safe defaults: a hard memory cap,
+   * a temp directory so out-of-core operators spill instead of
+   * OOMing, a single worker thread (multi-threading is a memory
+   * multiplier on tight boxes), `preserve_insertion_order=false`
+   * (cheaper streaming plans), and `enable_object_cache=true` (cache
+   * parquet footers between queries).
+   *
+   * This is the right factory for any path that runs inside a
+   * fixed-memory container — lane sync, compaction — where the
+   * historical failure mode is DuckDB claiming more memory than the
+   * cgroup allows and being killed mid-query. Defaults target a
+   * 512 MB box; override via env vars or explicit options.
+   *
+   * Explicit options win over env vars win over defaults.
+   */
+  static async createForContainer(
+    path = ":memory:",
+    options: DatabaseOptions = {},
+  ): Promise<Database> {
+    return Database.create(path, resolveContainerOptions(options));
   }
 
   /**

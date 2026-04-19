@@ -165,7 +165,10 @@ async function runLane(
 
   // Phase 2: run the lane.
   log(info, `acquired lease, running ${lane.tables.length} table sync(s)`);
-  const db = await Database.create(":memory:");
+  // createForContainer() applies a memory cap + spill directory so
+  // syncs that land a large parquet (COPY TO s3://...) don't OOM on
+  // a 512 MB host. Env overrides live in db.ts: DRIPLINE_DUCKDB_*.
+  const db = await Database.createForContainer(":memory:");
 
   try {
     const dl = await Dripline.create({

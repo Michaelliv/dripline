@@ -198,7 +198,15 @@ async function compactTable(
   // Phase 2: compact. Uses a fresh ephemeral DuckDB — we don't need
   // the dripline engine here because compact() only reads/writes
   // parquet via DuckDB's httpfs.
-  const db = await Database.create(":memory:");
+  //
+  // createForContainer() applies a hard memory cap + a temp directory
+  // so hash aggregates / sorts / joins spill to disk instead of OOMing
+  // the worker. Without this, compacting a large partitioned table on
+  // a 512 MB host (Render starter) enters a permanent OOM loop — the
+  // first compact dies, the lease releases, the next cron tick
+  // re-acquires, dies the same way, forever. Env overrides live in
+  // db.ts: DRIPLINE_DUCKDB_MEMORY_LIMIT, _THREADS, _TEMP_DIR.
+  const db = await Database.createForContainer(":memory:");
   try {
     // Partition curated/ by the table's declared partitionBy, falling
     // back to keyColumn names. Plugins can override to produce fewer,
