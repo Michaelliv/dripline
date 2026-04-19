@@ -269,30 +269,6 @@ export function workspacePlugin(api: VexPluginAPI) {
   });
 
   /**
-   * Run a SQL query against the workspace's curated parquet via
-   * DuckDB. No plugin code, no API calls — reads directly from R2.
-   *
-   * Registered as a mutation because vex's query cache is keyed by
-   * (name, args) and caches results forever; ad-hoc SQL would pollute
-   * that cache with one entry per distinct SQL string, and the
-   * reactive re-run-on-invalidation semantics are meaningless for
-   * one-shot queries. Mutations bypass both. Mental model: "run SQL
-   * and give me the rows now", not "subscribe to this query".
-   *
-   * Smart attach: only views tables referenced in the SQL string are
-   * wired up. Attaching every manifested table fires one S3 LIST +
-   * parquet footer read each (~1s), so attaching 20 tables adds ~20s
-   * to a single-table query. Fallback path (no references found —
-   * SHOW TABLES, etc) attaches all of them.
-   *
-   * Safeguards:
-   *   - SQL is trimmed and must be non-empty.
-   *   - Row cap (default 10k) applied client-side after execution;
-   *     caller can override but truncation is reported via `.truncated`.
-   *   - Timeout (default 30s) via AbortSignal; DuckDB's in-flight
-   *     query is interrupted.
-   */
-  /**
    * Trigger compaction on demand, bypassing the scheduler. Pass
    * `tables: ["foo", "bar"]` to limit to specific tables, or omit for
    * all compactable tables (those with a primary key).
@@ -347,6 +323,30 @@ export function workspacePlugin(api: VexPluginAPI) {
     },
   });
 
+  /**
+   * Run a SQL query against the workspace's curated parquet via
+   * DuckDB. No plugin code, no API calls — reads directly from R2.
+   *
+   * Registered as a mutation because vex's query cache is keyed by
+   * (name, args) and caches results forever; ad-hoc SQL would pollute
+   * that cache with one entry per distinct SQL string, and the
+   * reactive re-run-on-invalidation semantics are meaningless for
+   * one-shot queries. Mutations bypass both. Mental model: "run SQL
+   * and give me the rows now", not "subscribe to this query".
+   *
+   * Smart attach: only views tables referenced in the SQL string are
+   * wired up. Attaching every manifested table fires one S3 LIST +
+   * parquet footer read each (~1s), so attaching 20 tables adds ~20s
+   * to a single-table query. Fallback path (no references found —
+   * SHOW TABLES, etc) attaches all of them.
+   *
+   * Safeguards:
+   *   - SQL is trimmed and must be non-empty.
+   *   - Row cap (default 10k) applied client-side after execution;
+   *     caller can override but truncation is reported via `.truncated`.
+   *   - Timeout (default 30s) via AbortSignal; DuckDB's in-flight
+   *     query is interrupted.
+   */
   api.registerMutation("runSql", {
     args: { sql: "string" },
     async handler(_ctx, args) {
