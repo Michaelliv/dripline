@@ -99,13 +99,20 @@ export class Remote {
 
   /** DuckDB read_parquet() expression for curated data. Always uses
    *  `**\/*.parquet` with `hive_partitioning => true` — unpartitioned
-   *  tables write into a `_/` subdirectory so the glob matches both. */
+   *  tables write into a `_/` subdirectory so the glob matches both.
+   *
+   *  `union_by_name => true` is essential for schema evolution: when a
+   *  plugin adds a new column, curated parquet files written before
+   *  the change lack it. Without union_by_name DuckDB unions by
+   *  position and either errors (when column counts differ) or
+   *  corrupts types (when they happen to match positionally). With
+   *  it, missing columns become NULL and the new schema wins. */
   curatedRead(
     table: string,
     extra?: Record<string, string | boolean>,
   ): string {
     const url = this.s3(`curated/${table}/**/*.parquet`);
-    const opts = { hive_partitioning: true, ...extra };
+    const opts = { hive_partitioning: true, union_by_name: true, ...extra };
     const params = Object.entries(opts)
       .map(([k, v]) => `${k} => ${v}`)
       .join(", ");
