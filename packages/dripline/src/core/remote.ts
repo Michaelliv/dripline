@@ -359,7 +359,35 @@ export class Remote {
       opts.cursor && !cursorInPk ? `${pk}, "${opts.cursor}"` : pk;
 
     const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
-    const curatedRead = this.curatedRead(table);
+    const curatedReadBase = this.curatedRead(table);
+
+    // Schema evolution: if the cursor column was added after curated
+    // was first written, the existing parquet files don't have it
+    // and union_by_name can't fabricate it (it only unifies columns
+    // that exist in at least one file in the set). We probe curated's
+    // schema once and synthesize `NULL AS <cursor>` for narrow reads
+    // when it's missing. Wide reads are untouched — they keep
+    // `SELECT *` and rely on union_by_name at the final SEMI JOIN.
+    let curatedHasCursor = true;
+    if (opts.cursor && !cursorInPk) {
+      try {
+        const schema = (await db.all(
+          `DESCRIBE SELECT * FROM ${curatedReadBase} LIMIT 0`,
+        )) as Array<{ column_name: string }>;
+        curatedHasCursor = schema.some(
+          (r) => r.column_name === opts.cursor,
+        );
+      } catch {
+        // No curated yet, or transient error — assume present; the
+        // SEMI JOIN will error loudly if it's really missing.
+        curatedHasCursor = true;
+      }
+    }
+    const curatedNarrowCols =
+      opts.cursor && !cursorInPk && !curatedHasCursor
+        ? `${pk}, NULL AS "${opts.cursor}"`
+        : narrowCols;
+    const curatedRead = curatedReadBase;
 
     // Discover distinct partition combos in raw — these are the only
     // curated partitions we need to read (and rewrite). Empty when
@@ -415,7 +443,7 @@ export class Remote {
         ${
           hasCurated
             ? `UNION ALL BY NAME
-               SELECT ${narrowCols}, 1::INTEGER AS _src_order
+               SELECT ${curatedNarrowCols}, 1::INTEGER AS _src_order
                FROM ${curatedRead}${partFilter}`
             : ""
         }
