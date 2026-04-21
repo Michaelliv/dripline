@@ -1385,6 +1385,424 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
     },
   );
 
+  // ── Regressions from production incidents ────────────────────────
+  //
+  // Each test below reproduces a specific failure we hit in a live
+  // warehouse and then fixed. They're small but load-bearing —
+  // without them the next refactor to Remote.compact could silently
+  // re-break any of these paths and no existing scenario would
+  // notice. Keep them together so the "what went wrong" history is
+  // discoverable from the test file alone.
+
+  ift(
+    "regression: cursor column is also a PK column — no UNION BY NAME dup",
+    async () => {
+      // A table keyed on (entity, date) with cursor=date (daily
+      // aggregates, z-reports, etc.) used to break the narrow-decision
+      // compactor: it built `pk, cursor` for the narrow SELECT, which
+      // expanded to `"entity", "date", "date"` — and UNION ALL BY
+      // NAME rejects duplicate column names in the SELECT list with
+      // 'Binder Error: ... the name "date" occurs multiple times'.
+      //
+      // We register an ad-hoc plugin for this test because the file's
+      // default test plugin has a cursor that's NOT in the PK, and
+      // the bug only manifests when cursor ∈ PK.
+      const plugin: PluginDef = {
+        name: "cursor_in_pk_test",
+        version: "1.0.0",
+        tables: [
+          {
+            name: "daily_totals",
+            columns: [
+              { name: "total", type: "number" },
+              { name: "date", type: "string" },
+            ],
+            keyColumns: [
+              { name: "org", required: "required" },
+              { name: "date", required: "optional" },
+            ],
+            partitionBy: ["org"],
+            primaryKey: ["org", "date"],
+            cursor: "date",
+            async *list() {
+              /* filled by writeRawParquet directly */
+            },
+          },
+        ],
+      };
+      registry.register(plugin);
+
+      const prefix = freshPrefix("cursor-in-pk");
+      // Config points at the ad-hoc plugin.
+      const dir = mkdtempSync(join(tmpdir(), "dripline-compact-cip-"));
+      mkdirSync(join(dir, ".dripline"), { recursive: true });
+      writeFileSync(
+        join(dir, ".dripline", "config.json"),
+        JSON.stringify({
+          connections: [
+            { name: "default", plugin: "cursor_in_pk_test", config: {} },
+          ],
+          cache: { enabled: true, ttl: 300, maxSize: 1000 },
+          rateLimits: {},
+          lanes: {},
+          remote: {
+            endpoint: ENDPOINT,
+            bucket: BUCKET,
+            prefix,
+            accessKeyId: KEY,
+            secretAccessKey: SECRET,
+            secretType: "S3",
+          },
+        }),
+      );
+      process.chdir(dir);
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+
+      // Cycle 1: seed two days for two orgs.
+      await writeRawParquet(
+        remote,
+        "daily_totals",
+        [
+          { total: "100", date: "2024-01-01", org: "x" },
+          { total: "200", date: "2024-01-02", org: "x" },
+          { total: "150", date: "2024-01-01", org: "y" },
+        ],
+        "cip-1",
+      );
+      const r1 = await compact({ tables: ["daily_totals"], quiet: true });
+      assert.equal(
+        r1[0].status,
+        "ok",
+        `compact must not error on cursor-in-PK; got ${r1[0].error ?? "?"}`,
+      );
+      assert.equal(r1[0].rows, 3);
+
+      // Cycle 2: revise one day's total (same PK, same cursor value).
+      // The narrow SELECT still must not have duplicate column names.
+      await writeRawParquet(
+        remote,
+        "daily_totals",
+        [{ total: "999", date: "2024-01-01", org: "x" }],
+        "cip-2",
+      );
+      const r2 = await compact({ tables: ["daily_totals"], quiet: true });
+      assert.equal(r2[0].status, "ok");
+      assert.equal(r2[0].rows, 3, "dedupe by PK keeps 3 rows");
+
+      // Row for (x, 2024-01-01) should now reflect the revised total.
+      // Use a direct SQL read since there's no `id` column here.
+      const { Database: DB } = await import("../core/db.js");
+      const db = await DB.create(":memory:");
+      try {
+        await remote.attach(db);
+        const url = `s3://${BUCKET}/${prefix}/curated/daily_totals/**/*.parquet`;
+        const rows = await db.all(
+          `SELECT total FROM read_parquet('${url}', hive_partitioning => true)
+             WHERE org = 'x' AND date = '2024-01-01'`,
+        );
+        assert.equal(rows.length, 1);
+        assert.equal(
+          (rows[0] as { total: string | number }).total,
+          "999",
+          "newer raw should win",
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  ift(
+    "regression: cursor column added after curated was first written",
+    async () => {
+      // Plugin ships v1: columns (id, name, biz_date), cursor=biz_date.
+      // After curated is populated, plugin ships v2 that adds a
+      // new column ‘last_updated_at’ and switches cursor to it.
+      //
+      // The existing curated parquets don't have last_updated_at.
+      // union_by_name on read_parquet unifies columns that exist in
+      // AT LEAST ONE file — if every curated file is pre-v2, the
+      // unified schema still lacks last_updated_at and SELECT-ing
+      // it errors with 'Referenced column "last_updated_at" not
+      // found in FROM clause'.
+      //
+      // Fix under test: compact() probes curated's columns before
+      // building the narrow SELECT; when the cursor is missing from
+      // curated it substitutes `NULL AS <cursor>` on the curated
+      // side of the UNION. Raw carries the real value; curated
+      // contributes NULL and loses every window comparison to raw
+      // — exactly the desired semantics.
+
+      const plugin: PluginDef = {
+        name: "schema_evo_test",
+        version: "1.0.0",
+        tables: [
+          {
+            name: "orders_detail",
+            columns: [
+              { name: "id", type: "string" },
+              { name: "biz_date", type: "string" },
+              { name: "last_updated_at", type: "datetime" },
+            ],
+            keyColumns: [{ name: "org", required: "required" }],
+            partitionBy: ["org"],
+            primaryKey: ["id", "org"],
+            cursor: "last_updated_at",
+            async *list() {
+              /* raw written directly */
+            },
+          },
+        ],
+      };
+      registry.register(plugin);
+
+      const prefix = freshPrefix("schema-evo");
+      const dir = mkdtempSync(join(tmpdir(), "dripline-compact-evo-"));
+      mkdirSync(join(dir, ".dripline"), { recursive: true });
+      writeFileSync(
+        join(dir, ".dripline", "config.json"),
+        JSON.stringify({
+          connections: [
+            { name: "default", plugin: "schema_evo_test", config: {} },
+          ],
+          cache: { enabled: true, ttl: 300, maxSize: 1000 },
+          rateLimits: {},
+          lanes: {},
+          remote: {
+            endpoint: ENDPOINT,
+            bucket: BUCKET,
+            prefix,
+            accessKeyId: KEY,
+            secretAccessKey: SECRET,
+            secretType: "S3",
+          },
+        }),
+      );
+      process.chdir(dir);
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+
+      // Cycle 1: write PRE-migration curated directly. We bypass
+      // compact() here because v1 of the plugin didn't emit
+      // last_updated_at at all. Simulating an already-populated
+      // warehouse from before the schema change.
+      const { Database: DB } = await import("../core/db.js");
+      const seedDb = await DB.create(":memory:");
+      try {
+        await remote.attach(seedDb);
+        await seedDb.exec(`
+          CREATE TEMP TABLE _seed (id VARCHAR, biz_date VARCHAR, org VARCHAR);
+          INSERT INTO _seed VALUES
+            ('a', '2024-01-01', 'x'),
+            ('b', '2024-01-02', 'x'),
+            ('c', '2024-01-01', 'y');
+        `);
+        // Hive-laid curated files — same shape compact() would have
+        // written before the schema change.
+        await seedDb.exec(`
+          COPY (SELECT id, biz_date FROM _seed WHERE org = 'x')
+          TO '${remote.s3("curated/orders_detail/org=x/data_0.parquet")}'
+          (FORMAT PARQUET);
+        `);
+        await seedDb.exec(`
+          COPY (SELECT id, biz_date FROM _seed WHERE org = 'y')
+          TO '${remote.s3("curated/orders_detail/org=y/data_0.parquet")}'
+          (FORMAT PARQUET);
+        `);
+      } finally {
+        await seedDb.close();
+      }
+
+      // Cycle 2: post-migration raw carries the new cursor column.
+      await writeRawParquet(
+        remote,
+        "orders_detail",
+        [
+          {
+            id: "a",
+            biz_date: "2024-01-01",
+            last_updated_at: "2024-06-01T00:00:00Z",
+            org: "x",
+          },
+          {
+            id: "d",
+            biz_date: "2024-06-01",
+            last_updated_at: "2024-06-01T00:00:00Z",
+            org: "x",
+          },
+        ],
+        "evo-1",
+      );
+
+      const results = await compact({
+        tables: ["orders_detail"],
+        quiet: true,
+      });
+
+      // Must not error with 'column not found'.
+      assert.equal(
+        results[0].status,
+        "ok",
+        `expected ok, got ${results[0].status}: ${results[0].error ?? ""}`,
+      );
+
+      // Row counts: pre-existing b (x), c (y), plus raw overwrote a
+      // and added d — so 4 total. Raw always beats NULL cursor on
+      // window compare, so the curated version of `a` (pre-migration,
+      // NULL last_updated_at) is dropped in favor of raw's v2 row.
+      assert.equal(results[0].rows, 4);
+
+      // Verify the raw-side row for `a` replaced the pre-migration
+      // one, and last_updated_at now carries the new ISO timestamp.
+      const verifyDb = await DB.create(":memory:");
+      try {
+        await remote.attach(verifyDb);
+        const url = `s3://${BUCKET}/${prefix}/curated/orders_detail/**/*.parquet`;
+        const a = await verifyDb.all(
+          `SELECT id, last_updated_at FROM read_parquet('${url}', union_by_name => true, hive_partitioning => true)
+             WHERE id = 'a'`,
+        );
+        assert.equal(a.length, 1);
+        assert.equal(
+          (a[0] as { last_updated_at: string | null }).last_updated_at,
+          "2024-06-01T00:00:00Z",
+          "raw (v2) should win over pre-migration curated",
+        );
+
+        // Pre-migration row with no raw counterpart (b, c) survives
+        // with NULL last_updated_at — consistent with schema
+        // evolution (old rows get a NULL in the new column).
+        const b = await verifyDb.all(
+          `SELECT last_updated_at FROM read_parquet('${url}', union_by_name => true, hive_partitioning => true)
+             WHERE id = 'b'`,
+        );
+        assert.equal(b.length, 1);
+        assert.equal(
+          (b[0] as { last_updated_at: string | null }).last_updated_at,
+          null,
+          "pre-migration untouched row stays at NULL cursor",
+        );
+      } finally {
+        await verifyDb.close();
+      }
+    },
+  );
+
+  ift(
+    "regression: cursor-race healing — overlap window re-ingests skipped days",
+    async () => {
+      // Scenario replayed from a live incident. A table using
+      // cursor=business_date was syncing a restaurant that closes
+      // orders throughout the day. An early-morning run on day N
+      // happened to pull a handful of already-closed orders dated N,
+      // which advanced the cursor to N. Subsequent runs queried from
+      // N forward, grabbed a few closes that had rolled into day N+1
+      // by then, advanced cursor to N+1 — skipping the bulk of day N
+      // that only closed later in the evening. Data loss silent.
+      //
+      // The plugin-level fix is to widen the API window by 7 days on
+      // cursor-driven runs so late closes always fall in. The engine
+      // cursor filter (v > cursorValue) still dedups row-by-row.
+      //
+      // This test simulates the fix from compact()'s perspective:
+      // a re-ingest that emits rows from earlier dates than the
+      // current cursor must dedupe cleanly against existing curated
+      // and NOT produce duplicates for already-synced rows.
+
+      const prefix = freshPrefix("cursor-race");
+      process.chdir(makeProject(prefix));
+
+      const remote = new Remote({
+        endpoint: ENDPOINT,
+        bucket: BUCKET,
+        prefix,
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        secretType: "S3",
+      });
+
+      // Day N: a partial pull (early closes) — the bug scenario.
+      setPluginRows([
+        { id: 1, name: "early-1", updated_at: "2024-01-01T03:00:00Z", org: "x" },
+        { id: 2, name: "early-2", updated_at: "2024-01-01T04:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      const r1 = await compact({ quiet: true });
+      assert.equal(r1[0].status, "ok");
+      assert.equal(r1[0].rows, 2);
+
+      // Simulate the widened re-pull: raw now carries BOTH the
+      // already-synced rows (unchanged cursor) AND the late closes
+      // that were previously stranded.
+      const aws = new AwsClient({
+        accessKeyId: KEY,
+        secretAccessKey: SECRET,
+        service: "s3",
+        region: "auto",
+      });
+      await aws.fetch(
+        `${ENDPOINT}/${BUCKET}/${prefix}/_leases/lane-main.json`,
+        { method: "DELETE" },
+      );
+      const stateKeys = await remote.listObjects("_state/main/");
+      if (stateKeys.length > 0) await remote.deleteObjects(stateKeys);
+
+      // Later pull returns id=1 and id=2 again (unchanged) plus the
+      // late closes id=3,4,5 with newer cursor values. The engine's
+      // cursor filter will skip id=1,2 because their updated_at is
+      // <= cursorValue from cycle 1; only id=3,4,5 reach raw.
+      setPluginRows([
+        { id: 1, name: "early-1", updated_at: "2024-01-01T03:00:00Z", org: "x" },
+        { id: 2, name: "early-2", updated_at: "2024-01-01T04:00:00Z", org: "x" },
+        { id: 3, name: "late-1", updated_at: "2024-01-01T21:00:00Z", org: "x" },
+        { id: 4, name: "late-2", updated_at: "2024-01-01T22:00:00Z", org: "x" },
+        { id: 5, name: "late-3", updated_at: "2024-01-01T23:00:00Z", org: "x" },
+      ]);
+      await run({ quiet: true });
+      const r2 = await compact({ quiet: true });
+      assert.equal(r2[0].status, "ok");
+      assert.equal(
+        r2[0].rows,
+        5,
+        "all 5 orders should land after re-ingest, no dupes",
+      );
+
+      // Sanity: the original early rows were not duplicated.
+      const { Database: DB } = await import("../core/db.js");
+      const db = await DB.create(":memory:");
+      try {
+        await remote.attach(db);
+        const url = `s3://${BUCKET}/${prefix}/curated/items/**/*.parquet`;
+        const dupes = await db.all(
+          `SELECT id, COUNT(*) AS n FROM read_parquet('${url}', hive_partitioning => true)
+             GROUP BY id HAVING COUNT(*) > 1`,
+        );
+        assert.equal(
+          dupes.length,
+          0,
+          `no id should appear more than once; found: ${JSON.stringify(dupes)}`,
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
   ift("missing remote rejects with a clear error", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dripline-compact-"));
     mkdirSync(join(dir, ".dripline"), { recursive: true });

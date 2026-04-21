@@ -359,7 +359,7 @@ export class Remote {
       opts.cursor && !cursorInPk ? `${pk}, "${opts.cursor}"` : pk;
 
     const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
-    const curatedReadBase = this.curatedRead(table);
+    const curatedRead = this.curatedRead(table);
 
     // Schema evolution: if the cursor column was added after curated
     // was first written, the existing parquet files don't have it
@@ -369,17 +369,17 @@ export class Remote {
     // when it's missing. Wide reads are untouched — they keep
     // `SELECT *` and rely on union_by_name at the final SEMI JOIN.
     let curatedHasCursor = true;
-    if (opts.cursor && !cursorInPk) {
+    if (opts.cursor && !cursorInPk && hasCurated) {
       try {
         const schema = (await db.all(
-          `DESCRIBE SELECT * FROM ${curatedReadBase} LIMIT 0`,
+          `DESCRIBE SELECT * FROM ${curatedRead} LIMIT 0`,
         )) as Array<{ column_name: string }>;
         curatedHasCursor = schema.some(
           (r) => r.column_name === opts.cursor,
         );
       } catch {
-        // No curated yet, or transient error — assume present; the
-        // SEMI JOIN will error loudly if it's really missing.
+        // Transient probe failure — assume the column is present;
+        // the SEMI JOIN will error loudly if it really isn't.
         curatedHasCursor = true;
       }
     }
@@ -387,7 +387,6 @@ export class Remote {
       opts.cursor && !cursorInPk && !curatedHasCursor
         ? `${pk}, NULL AS "${opts.cursor}"`
         : narrowCols;
-    const curatedRead = curatedReadBase;
 
     // Discover distinct partition combos in raw — these are the only
     // curated partitions we need to read (and rewrite). Empty when
@@ -410,10 +409,20 @@ export class Remote {
     // matching baseline's behaviour where raw's PK DESC would outrank
     // curated's. The EXCLUDE drops the helper before writing.
     const narrowColsWithOrder = `${narrowCols}, _src_order`;
-    const semiJoinCols =
-      opts.cursor && !cursorInPk
-        ? `${pk}, "${opts.cursor}", _src_order`
-        : `${pk}, _src_order`;
+    // SEMI JOIN identity. Normally (pk, cursor, _src_order) — the
+    // cursor in the predicate is defensive redundancy since winners
+    // are already unique per (pk, _src_order) after the ROW_NUMBER
+    // filter. We DROP the cursor from the join key in two cases:
+    //   (a) cursor is one of the PK columns — it's already covered.
+    //   (b) curated rows project NULL for the cursor (schema
+    //       evolution). SQL's NULL = NULL is false, so joining on
+    //       cursor would silently filter every curated-only winner
+    //       out of the final output.
+    const joinNeedsCursor =
+      opts.cursor != null && !cursorInPk && curatedHasCursor;
+    const semiJoinCols = joinNeedsCursor
+      ? `${pk}, "${opts.cursor}", _src_order`
+      : `${pk}, _src_order`;
     const innerOrder = opts.cursor ? `${orderBy}, _src_order ASC` : orderBy;
 
     // Write one COPY per partition combo. This replaces DuckDB's
