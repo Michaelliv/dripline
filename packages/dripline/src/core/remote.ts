@@ -341,7 +341,15 @@ export class Remote {
       : pk + " DESC";
     const partitionBy = opts.partitionBy ?? [];
     const parts = partitionBy.map((c) => `"${c}"`);
-    const narrowCols = opts.cursor ? `${pk}, "${opts.cursor}"` : pk;
+    // Build narrow cols. When the cursor is also one of the PK
+    // columns — legitimate whenever the natural key includes the
+    // progress field (e.g. daily aggregates keyed on (entity, date)
+    // with cursor=date) — don't list it twice. UNION BY NAME rejects
+    // duplicate column names in the SELECT list.
+    const cursorInPk =
+      opts.cursor != null && opts.primaryKey.includes(opts.cursor);
+    const narrowCols =
+      opts.cursor && !cursorInPk ? `${pk}, "${opts.cursor}"` : pk;
 
     const rawRead = `read_parquet('${raw}', union_by_name => true, hive_partitioning => false)`;
     const curatedRead = this.curatedRead(table);
@@ -367,9 +375,10 @@ export class Remote {
     // matching baseline's behaviour where raw's PK DESC would outrank
     // curated's. The EXCLUDE drops the helper before writing.
     const narrowColsWithOrder = `${narrowCols}, _src_order`;
-    const semiJoinCols = opts.cursor
-      ? `${pk}, "${opts.cursor}", _src_order`
-      : `${pk}, _src_order`;
+    const semiJoinCols =
+      opts.cursor && !cursorInPk
+        ? `${pk}, "${opts.cursor}", _src_order`
+        : `${pk}, _src_order`;
     const innerOrder = opts.cursor ? `${orderBy}, _src_order ASC` : orderBy;
 
     // Write one COPY per partition combo. This replaces DuckDB's
