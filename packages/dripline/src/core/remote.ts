@@ -446,17 +446,6 @@ export class Remote {
         part,
       );
 
-      const srcTaggedNarrow = `
-        SELECT ${narrowCols}, 0::INTEGER AS _src_order
-        FROM ${rawRead}${partFilter}
-        ${
-          hasCurated
-            ? `UNION ALL BY NAME
-               SELECT ${curatedNarrowCols}, 1::INTEGER AS _src_order
-               FROM ${curatedRead}${partFilter}`
-            : ""
-        }
-      `;
       const srcTaggedWide = `
         SELECT *, 0::INTEGER AS _src_order FROM ${rawRead}${partFilter}
         ${
@@ -466,20 +455,64 @@ export class Remote {
             : ""
         }
       `;
-      const body = `
-        WITH winners AS (
-          SELECT ${narrowColsWithOrder} FROM (
-            SELECT ${narrowColsWithOrder},
-                   ROW_NUMBER() OVER (
-                     PARTITION BY ${pk} ORDER BY ${innerOrder}
-                   ) AS _rn
-            FROM (${srcTaggedNarrow})
-          ) WHERE _rn = 1
-        )
-        SELECT src.* EXCLUDE (_src_order)
-        FROM (${srcTaggedWide}) src
-        SEMI JOIN winners USING (${semiJoinCols})
-      `;
+
+      // Two dedup strategies:
+      //
+      //   (A) When cursor is NOT in PK (the common case for wide,
+      //       JSON-heavy tables): narrow-decision. Project (pk,
+      //       cursor) through a window, then SEMI JOIN back to the
+      //       wide rows. Keeps the sort buffer tiny on wide schemas.
+      //
+      //   (B) When cursor IS in PK (e.g. daily aggregates keyed on
+      //       (entity, date) with cursor=date): use QUALIFY over
+      //       the wide projection directly. Narrow-decision can't
+      //       be used here because (pk, cursor) isn't a unique
+      //       identity within a source — multiple raw files can
+      //       carry the same (pk, cursor) tuple, a SEMI JOIN on
+      //       (pk, cursor, _src_order) would pull them all through,
+      //       and the cursor-in-PK case means our narrow cols ARE
+      //       the PK, so we don't have any extra discriminator.
+      //       QUALIFY applies the ROW_NUMBER filter inline and
+      //       picks exactly one winner per partition. Cursor-in-PK
+      //       tables are narrow by construction (daily totals,
+      //       tender breakdowns) so wide-window memory isn't a
+      //       concern.
+      let body: string;
+      if (cursorInPk) {
+        body = `
+          SELECT src.* EXCLUDE (_src_order)
+          FROM (${srcTaggedWide}) src
+          QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY ${pk} ORDER BY ${innerOrder}
+          ) = 1
+        `;
+      } else {
+        const srcTaggedNarrow = `
+          SELECT ${narrowCols}, 0::INTEGER AS _src_order
+          FROM ${rawRead}${partFilter}
+          ${
+            hasCurated
+              ? `UNION ALL BY NAME
+                 SELECT ${curatedNarrowCols}, 1::INTEGER AS _src_order
+                 FROM ${curatedRead}${partFilter}`
+              : ""
+          }
+        `;
+        body = `
+          WITH winners AS (
+            SELECT ${narrowColsWithOrder} FROM (
+              SELECT ${narrowColsWithOrder},
+                     ROW_NUMBER() OVER (
+                       PARTITION BY ${pk} ORDER BY ${innerOrder}
+                     ) AS _rn
+              FROM (${srcTaggedNarrow})
+            ) WHERE _rn = 1
+          )
+          SELECT src.* EXCLUDE (_src_order)
+          FROM (${srcTaggedWide}) src
+          SEMI JOIN winners USING (${semiJoinCols})
+        `;
+      }
 
       // The path is a SQL string literal — escape single quotes so an
       // apostrophe-bearing partition value (e.g. "o'reilly") doesn't

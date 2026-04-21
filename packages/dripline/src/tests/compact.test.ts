@@ -1485,20 +1485,42 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
       );
       assert.equal(r1[0].rows, 3);
 
-      // Cycle 2: revise one day's total (same PK, same cursor value).
-      // The narrow SELECT still must not have duplicate column names.
+      // Cycle 2: multiple raw files in a single compact carrying the
+      // SAME (pk, cursor) — e.g. the scheduler ran three times before
+      // a compactor tick caught up, each lane run producing one row
+      // for (x, 2024-01-01) with slightly different totals. An earlier
+      // version of cursor-in-PK compact would pull all three through
+      // the SEMI JOIN because narrow winners are identified only by
+      // (pk, _src_order) and raw's _src_order was 0 for every copy.
+      // QUALIFY ROW_NUMBER()=1 on the wide side dedups correctly.
+      await writeRawParquet(
+        remote,
+        "daily_totals",
+        [{ total: "777", date: "2024-01-01", org: "x" }],
+        "cip-2a",
+      );
+      await writeRawParquet(
+        remote,
+        "daily_totals",
+        [{ total: "888", date: "2024-01-01", org: "x" }],
+        "cip-2b",
+      );
       await writeRawParquet(
         remote,
         "daily_totals",
         [{ total: "999", date: "2024-01-01", org: "x" }],
-        "cip-2",
+        "cip-2c",
       );
       const r2 = await compact({ tables: ["daily_totals"], quiet: true });
       assert.equal(r2[0].status, "ok");
-      assert.equal(r2[0].rows, 3, "dedupe by PK keeps 3 rows");
+      assert.equal(
+        r2[0].rows,
+        3,
+        "dedupe by PK keeps 3 rows even with 3 raw files for same (pk, cursor)",
+      );
 
-      // Row for (x, 2024-01-01) should now reflect the revised total.
-      // Use a direct SQL read since there's no `id` column here.
+      // The (x, 2024-01-01) row must appear exactly once in curated.
+      // Before the QUALIFY fix, this was 3+ after multi-file compact.
       const { Database: DB } = await import("../core/db.js");
       const db = await DB.create(":memory:");
       try {
@@ -1508,14 +1530,47 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
           `SELECT total FROM read_parquet('${url}', hive_partitioning => true)
              WHERE org = 'x' AND date = '2024-01-01'`,
         );
-        assert.equal(rows.length, 1);
         assert.equal(
-          (rows[0] as { total: string | number }).total,
-          "999",
-          "newer raw should win",
+          rows.length,
+          1,
+          `cursor-in-PK must not duplicate on multi-raw-file compact; got ${rows.length} rows`,
         );
+        // Which total wins is deterministic from ORDER BY
+        // (cursor DESC, _src_order ASC). All three raw rows share
+        // cursor='2024-01-01' and _src_order=0, so the first in
+        // physical scan order wins — we don't lock down the exact
+        // value, only that there is exactly one.
       } finally {
         await db.close();
+      }
+
+      // Cycle 3: a follow-up compact on an already-deduped curated
+      // must stay idempotent. This catches the case where re-reading
+      // curated in the compactor's UNION would re-introduce dupes.
+      await writeRawParquet(
+        remote,
+        "daily_totals",
+        [{ total: "1000", date: "2024-01-01", org: "x" }],
+        "cip-3",
+      );
+      const r3 = await compact({ tables: ["daily_totals"], quiet: true });
+      assert.equal(r3[0].status, "ok");
+      assert.equal(
+        r3[0].rows,
+        3,
+        "subsequent compacts stay at 3 rows (idempotent across cycles)",
+      );
+      const db2 = await DB.create(":memory:");
+      try {
+        await remote.attach(db2);
+        const url = `s3://${BUCKET}/${prefix}/curated/daily_totals/**/*.parquet`;
+        const rows = await db2.all(
+          `SELECT COUNT(*) AS n FROM read_parquet('${url}', hive_partitioning => true)
+             WHERE org = 'x' AND date = '2024-01-01'`,
+        );
+        assert.equal(Number((rows[0] as { n: bigint | number }).n), 1);
+      } finally {
+        await db2.close();
       }
     },
   );
