@@ -33,10 +33,15 @@ import {
 } from "dripline";
 import type { Vex } from "vex-core";
 
-/** Default cadence for compaction. Mirrors the cron docs in dripline:
- *  "every 15-30m is plenty" — we pick the slower end so a workspace
- *  with 30+ tables doesn't spend its compute budget on dedupe. */
-const DEFAULT_COMPACT_SCHEDULE = "every 30m";
+/** Default cadence for compaction. Compaction on an idle table is
+ *  effectively free — `listObjects` on empty `raw/` returns
+ *  `{rows:0, files:0, rawCleaned:0}` in one S3 LIST call. Fast
+ *  enough to default aggressive: 5m keeps hot tables (e.g. live
+ *  order streams syncing every 2–15m) near-realtime for query
+ *  readers, while the idle-skip path keeps the cost bounded on
+ *  workspaces with dozens of quiet tables. Override via
+ *  DRIPYARD_COMPACT_SCHEDULE / CompactorOptions.schedule. */
+const DEFAULT_COMPACT_SCHEDULE = "every 5m";
 
 /** Default cap on a single table's compaction wall-clock. */
 const DEFAULT_MAX_RUNTIME_MS = 10 * 60 * 1000;

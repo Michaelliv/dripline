@@ -149,7 +149,13 @@ export async function startServer(options: ServerOptions = {}) {
   // the workspace loads its plugins). Lease-protected per table so
   // multiple workers safely divide work; on dashboard-only mode it's
   // a no-op since no worker ever ticks the jobs.
-  const compactor = new Compactor(vex, workspace?.remote ?? null);
+  const compactor = new Compactor(vex, workspace?.remote ?? null, {
+    // Env-tunable so operators can trade compute for freshness without
+    // a code change. Default (30m) is set in Compactor itself.
+    schedule: process.env.DRIPYARD_COMPACT_SCHEDULE
+      ? `every ${process.env.DRIPYARD_COMPACT_SCHEDULE.replace(/^every\s+/, "")}`
+      : undefined,
+  });
   // Wire the orchestrator up to the lanes plugin so UI's "Run now"
   // button can dispatch through the same path as scheduled runs.
   // workerId is set below once the embedded worker registers; until

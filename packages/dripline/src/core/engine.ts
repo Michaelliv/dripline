@@ -886,7 +886,25 @@ export class QueryEngine {
     const hasPK = table.primaryKey && table.primaryKey.length > 0;
 
     if (!hasCursor) {
-      await this.db.run(`DELETE FROM ${qn}`);
+      // Full-replace strategy — but scoped to the current param set.
+      // A lane that syncs the same table under multiple param combos
+      // (e.g. section_id=3011, then 3012, …) must not wipe sibling
+      // partitions. Without this scope, only the last combo's rows
+      // survive in DuckDB and thus in the published parquet. Bug
+      // previously surfaced as "only last section_id reaches R2" for
+      // cursor-less tables like shift_employees.
+      const scopeQuals = quals.filter((q) => q.value != null);
+      if (scopeQuals.length > 0) {
+        const where = scopeQuals
+          .map((q) => `"${q.column}" = ?`)
+          .join(" AND ");
+        await this.db.run(
+          `DELETE FROM ${qn} WHERE ${where}`,
+          ...scopeQuals.map((q) => q.value),
+        );
+      } else {
+        await this.db.run(`DELETE FROM ${qn}`);
+      }
     }
 
     // Set up upsert index if needed

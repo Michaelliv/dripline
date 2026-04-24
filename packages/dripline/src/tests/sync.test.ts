@@ -84,6 +84,59 @@ describe("sync() — full replace (no cursor)", () => {
     const rows = await dl.query('SELECT * FROM "s"."items"');
     assert.equal(rows.length, 3); // not 6
   });
+
+  it("preserves sibling partitions when syncing same table with different params", async () => {
+    // Regression: a cursor-less table synced across multiple param sets
+    // (e.g. section_id=a, then section_id=b) used to wipe all rows before
+    // each insert, so only the last param's data survived. The DELETE
+    // must be scoped to the current quals.
+    const plugin: PluginDef = {
+      name: "multi_section",
+      version: "1.0.0",
+      tables: [
+        {
+          name: "employees",
+          columns: [
+            { name: "id", type: "number" },
+            { name: "section_id", type: "string" },
+            { name: "name", type: "string" },
+          ],
+          keyColumns: [{ name: "section_id", required: "required" }],
+          primaryKey: ["id", "section_id"],
+          *list(ctx) {
+            const section = ctx.quals.find((q) => q.column === "section_id")
+              ?.value as string;
+            if (section === "a") {
+              yield { id: 1, section_id: "a", name: "Alice" };
+              yield { id: 2, section_id: "a", name: "Bob" };
+            } else if (section === "b") {
+              yield { id: 3, section_id: "b", name: "Charlie" };
+            }
+          },
+        },
+      ],
+    };
+
+    await setup(plugin);
+    await dl.sync({ employees: { section_id: "a" } });
+    await dl.sync({ employees: { section_id: "b" } });
+
+    const rows = await dl.query<{ id: number; section_id: string }>(
+      'SELECT * FROM "s"."employees" ORDER BY id',
+    );
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].section_id, "a");
+    assert.equal(rows[1].section_id, "a");
+    assert.equal(rows[2].section_id, "b");
+
+    // Re-syncing one section replaces only that section's rows
+    await dl.sync({ employees: { section_id: "a" } });
+    const after = await dl.query<{ section_id: string }>(
+      'SELECT section_id FROM "s"."employees" ORDER BY id',
+    );
+    assert.equal(after.length, 3);
+    assert.equal(after[2].section_id, "b");
+  });
 });
 
 describe("sync() — incremental with cursor", () => {
