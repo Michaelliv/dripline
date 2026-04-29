@@ -423,7 +423,15 @@ export class Remote {
     const semiJoinCols = joinNeedsCursor
       ? `${pk}, "${opts.cursor}", _src_order`
       : `${pk}, _src_order`;
-    const innerOrder = opts.cursor ? `${orderBy}, _src_order ASC` : orderBy;
+    // Inner ORDER for ROW_NUMBER. _src_order ASC is the tiebreak that
+    // makes raw beat curated when (pk, cursor) are equal. The cursor-
+    // less case has `orderBy = pk DESC` which is identity within a
+    // PARTITION BY pk — so without _src_order in the inner order, the
+    // ordering is arbitrary and the final QUALIFY would pick a
+    // non-deterministic winner. Always append it.
+    const innerOrder = opts.cursor
+      ? `${orderBy}, _src_order ASC`
+      : `${orderBy}, _src_order ASC`;
 
     // Write one COPY per partition combo. This replaces DuckDB's
     // PARTITION_BY writer, whose per-partition row-group buffer was
@@ -498,6 +506,26 @@ export class Remote {
               : ""
           }
         `;
+        // Narrow-decision SEMI JOIN, plus a final QUALIFY collapse.
+        //
+        // The SEMI JOIN matches src rows by (pk, cursor?, _src_order).
+        // When src contains *exact-duplicate* rows for the same
+        // (pk, cursor, _src_order) tuple — either because multiple
+        // raw files carry the same row (e.g. /orders + /documents/v2
+        // returning the same closed order with the same lastUpdated;
+        // or N full-replace runs of a cursor-less table all writing
+        // the identical row set) or because curated already contains
+        // dups from a previous buggy compaction — every duplicate src
+        // row matches the single winner and the SEMI JOIN output
+        // multiplies. Once dups land in curated, every subsequent
+        // compact preserves them; the bug is self-sustaining.
+        //
+        // QUALIFY ROW_NUMBER()=1 over the SEMI JOIN result collapses
+        // each pk's surviving rows to one. Memory cost is small: the
+        // SEMI JOIN already cut the wide stream down to roughly
+        // unique-pk count, so the window operates on a thin slice.
+        // The narrow-decision memory benefit is preserved — we still
+        // never sort the wide stream.
         body = `
           WITH winners AS (
             SELECT ${narrowColsWithOrder} FROM (
@@ -508,9 +536,14 @@ export class Remote {
               FROM (${srcTaggedNarrow})
             ) WHERE _rn = 1
           )
-          SELECT src.* EXCLUDE (_src_order)
-          FROM (${srcTaggedWide}) src
-          SEMI JOIN winners USING (${semiJoinCols})
+          SELECT * EXCLUDE (_src_order) FROM (
+            SELECT src.*
+            FROM (${srcTaggedWide}) src
+            SEMI JOIN winners USING (${semiJoinCols})
+            QUALIFY ROW_NUMBER() OVER (
+              PARTITION BY ${pk} ORDER BY ${innerOrder}
+            ) = 1
+          )
         `;
       }
 

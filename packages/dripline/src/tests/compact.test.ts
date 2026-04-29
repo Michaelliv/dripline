@@ -1858,6 +1858,209 @@ describe("dripline compact (end-to-end)", { concurrency: false }, () => {
     },
   );
 
+  ift(
+    "regression: cursor-not-in-PK with duplicate identical raw rows",
+    async () => {
+      // Reproduces a production-observed bug. tabit_orders snapshots
+      // every 2 minutes via /orders; if an open order has the same
+      // last_updated_at across consecutive snapshots (no edits in
+      // between), the engine's row-level cursor filter (`v > cursor`)
+      // skips the redundant rows so they don't enter raw — BUT a
+      // multi-pull session within a SINGLE run can yield two identical
+      // tuples (e.g. /orders + /documents/v2 both return the same
+      // closed order with the same lastUpdated, before the cursor
+      // catches up). Both land in raw with identical (pk, cursor,
+      // _src_order=0).
+      //
+      // The narrow-decision compactor's SEMI JOIN on
+      // (pk, cursor, _src_order) admits ALL such matches, so the
+      // wide output multiplies. Once dups are in curated, every
+      // subsequent compact preserves them — the bug is self-sustaining.
+      //
+      // The fix collapses the SEMI JOIN output to one row per pk
+      // via a final QUALIFY ROW_NUMBER()=1.
+      const prefix = freshPrefix("dup-cursor-not-in-pk");
+      process.chdir(makeProject(prefix));
+      const remote = new Remote({
+        endpoint: ENDPOINT, bucket: BUCKET, prefix,
+        accessKeyId: KEY, secretAccessKey: SECRET, secretType: "S3",
+      });
+
+      // Inject 3 IDENTICAL raw rows for one pk. Plain dripline run
+      // can't easily produce this shape (engine cursor filter
+      // collapses them), so we write the parquet directly.
+      await writeRawParquet(
+        remote, "items",
+        [
+          { id: "1", name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+          { id: "1", name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+          { id: "1", name: "a", updated_at: "2024-01-01T00:00:00Z", org: "x" },
+          { id: "2", name: "b", updated_at: "2024-02-01T00:00:00Z", org: "x" },
+        ],
+        "dup-1",
+      );
+      const r1 = await compact({ tables: ["items"], quiet: true });
+      assert.equal(r1[0].status, "ok");
+      assert.equal(
+        r1[0].rows, 2,
+        "identical raw rows must collapse to one per pk",
+      );
+
+      // Subsequent compact with new raw rows must not re-multiply
+      // existing curated rows (which is what kept the bug alive
+      // even after a clean run).
+      await writeRawParquet(
+        remote, "items",
+        [
+          { id: "1", name: "a-v2", updated_at: "2024-06-01T00:00:00Z", org: "x" },
+          { id: "1", name: "a-v2", updated_at: "2024-06-01T00:00:00Z", org: "x" },
+        ],
+        "dup-2",
+      );
+      const r2 = await compact({ tables: ["items"], quiet: true });
+      assert.equal(r2[0].status, "ok");
+      assert.equal(r2[0].rows, 2, "second compact stays at 2 rows, not 4+");
+
+      const row = await readCuratedById(prefix, "items", 1);
+      assert.ok(row);
+      assert.equal(row.name, "a-v2", "newer cursor wins");
+    },
+  );
+
+  ift(
+    "regression: cursor-not-in-PK heals when curated already contains dups",
+    async () => {
+      // The cursor-not-in-PK SEMI JOIN bug is self-sustaining: once
+      // curated has dups, every subsequent compact's SEMI JOIN on
+      // (pk, cursor, _src_order) matches every duped row. The fix
+      // must heal pre-existing curated dups too.
+      //
+      // Simulates the live-warehouse condition we observed for
+      // tabit_orders: 1.3M curated rows for 424k unique PKs, with the
+      // dups all carrying identical (pk, cursor) tuples on the
+      // curated side.
+      const prefix = freshPrefix("heal-curated");
+      process.chdir(makeProject(prefix));
+      const remote = new Remote({
+        endpoint: ENDPOINT, bucket: BUCKET, prefix,
+        accessKeyId: KEY, secretAccessKey: SECRET, secretType: "S3",
+      });
+
+      // Seed curated/ directly with 5 duplicate rows for the same pk.
+      // All columns as VARCHAR to match the raw parquet shape
+      // produced by writeRawParquet — union_by_name unifies them.
+      const { Database: DB } = await import("../core/db.js");
+      const seedDb = await DB.create(":memory:");
+      try {
+        await remote.attach(seedDb);
+        await seedDb.exec(`
+          CREATE TEMP TABLE _seed (id VARCHAR, name VARCHAR, updated_at VARCHAR, org VARCHAR);
+          INSERT INTO _seed VALUES
+            ('1', 'a', '2024-01-01T00:00:00Z', 'x'),
+            ('1', 'a', '2024-01-01T00:00:00Z', 'x'),
+            ('1', 'a', '2024-01-01T00:00:00Z', 'x'),
+            ('1', 'a', '2024-01-01T00:00:00Z', 'x'),
+            ('1', 'a', '2024-01-01T00:00:00Z', 'x');
+        `);
+        // The compactor partitions by `org` (the table's keyColumn).
+        // Seed under the partitioned hive path so subsequent compact
+        // reads find a single consistent layout.
+        await seedDb.exec(`
+          COPY (SELECT id, name, updated_at FROM _seed) TO
+          '${remote.s3("curated/items/org=x/data_0.parquet")}'
+          (FORMAT PARQUET);
+        `);
+      } finally {
+        await seedDb.close();
+      }
+
+      // A subsequent compact with any raw input must drop the curated
+      // dups, leaving exactly 1 row per pk.
+      await writeRawParquet(
+        remote, "items",
+        [{ id: "2", name: "b", updated_at: "2024-02-01T00:00:00Z", org: "x" }],
+        "heal-1",
+      );
+      const r = await compact({ tables: ["items"], quiet: true });
+      assert.equal(r[0].status, "ok", `reason: ${r[0].reason}`);
+      assert.equal(
+        r[0].rows, 2,
+        "compact should heal pre-existing curated dups (5 → 1 for id=1, plus new id=2)",
+      );
+    },
+  );
+
+  ift(
+    "regression: cursor-less table accumulates dups across full-replace runs",
+    async () => {
+      // For tables without a cursor (full-replace pattern: zester
+      // suppliers, products, etc.), each lane run writes a complete
+      // raw parquet. After N runs there are N raw files each
+      // containing the same row set, and the SEMI JOIN on
+      // (pk, _src_order) admits all N copies for each pk — curated
+      // grows by N× rows on every compaction. Production tabit_orders
+      // and zester_* show 3-60x dup factors from exactly this.
+      //
+      // We register an ad-hoc plugin with no cursor and verify N
+      // raw files for the same pks compact to ONE row per pk.
+      const plugin: PluginDef = {
+        name: "cursorless_test",
+        version: "1.0.0",
+        tables: [
+          {
+            name: "suppliers",
+            columns: [{ name: "id", type: "number" }, { name: "name", type: "string" }],
+            keyColumns: [{ name: "org", required: "required" }],
+            primaryKey: ["id"],
+            async *list() { /* test injects raw directly */ },
+          },
+        ],
+      };
+      registry.register(plugin);
+
+      const prefix = freshPrefix("cursorless-dup");
+      const dir = mkdtempSync(join(tmpdir(), "dripline-compact-cl-"));
+      mkdirSync(join(dir, ".dripline"), { recursive: true });
+      writeFileSync(
+        join(dir, ".dripline", "config.json"),
+        JSON.stringify({
+          connections: [{ name: "default", plugin: "cursorless_test", config: {} }],
+          cache: { enabled: true, ttl: 300, maxSize: 1000 },
+          rateLimits: {},
+          lanes: {},
+          remote: { endpoint: ENDPOINT, bucket: BUCKET, prefix,
+            accessKeyId: KEY, secretAccessKey: SECRET, secretType: "S3" },
+        }),
+      );
+      process.chdir(dir);
+
+      const remote = new Remote({
+        endpoint: ENDPOINT, bucket: BUCKET, prefix,
+        accessKeyId: KEY, secretAccessKey: SECRET, secretType: "S3",
+      });
+
+      // Five raw files, each with the same 3-row supplier list
+      // (mimics 5 full-replace lane ticks before a compactor caught up).
+      for (let i = 1; i <= 5; i++) {
+        await writeRawParquet(
+          remote, "suppliers",
+          [
+            { id: "1", name: "acme", org: "x" },
+            { id: "2", name: "globex", org: "x" },
+            { id: "3", name: "initech", org: "x" },
+          ],
+          `cl-${i}`,
+        );
+      }
+      const r = await compact({ tables: ["suppliers"], quiet: true });
+      assert.equal(r[0].status, "ok");
+      assert.equal(
+        r[0].rows, 3,
+        "5 raw files with identical content must compact to 3 rows, not 15",
+      );
+    },
+  );
+
   ift("missing remote rejects with a clear error", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dripline-compact-"));
     mkdirSync(join(dir, ".dripline"), { recursive: true });
