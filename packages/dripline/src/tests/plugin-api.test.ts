@@ -103,6 +103,27 @@ describe("createPluginAPI", () => {
     api.log.warn("test");
     api.log.error("test");
   });
+
+  it("log.info writes to stderr, never stdout", () => {
+    const { api } = createPluginAPI("t");
+    const origLog = console.log;
+    const origWrite = process.stderr.write;
+    const stdoutLines: string[] = [];
+    const stderrChunks: string[] = [];
+    console.log = (...args: any[]) => stdoutLines.push(args.map(String).join(" "));
+    process.stderr.write = ((chunk: any) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      api.log.info("hello");
+    } finally {
+      console.log = origLog;
+      process.stderr.write = origWrite;
+    }
+    assert.equal(stdoutLines.length, 0);
+    assert.deepEqual(stderrChunks, ["[t] hello\n"]);
+  });
 });
 
 describe("resolvePluginExport", () => {

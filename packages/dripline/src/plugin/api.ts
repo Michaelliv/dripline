@@ -79,7 +79,10 @@ export function createPluginAPI(pluginId: string): {
     },
     log: {
       info(msg: string) {
-        console.log(`[${name}] ${msg}`);
+        // stderr, not stdout: plugins can run inside hosts whose stdout is a
+        // machine protocol channel (e.g. an NDJSON RPC stream), and a stray
+        // "[<name>] ..." line corrupts it. warn/error already go to stderr.
+        process.stderr.write(`[${name}] ${msg}\n`);
       },
       warn(msg: string) {
         console.warn(`[${name}] ${msg}`);
